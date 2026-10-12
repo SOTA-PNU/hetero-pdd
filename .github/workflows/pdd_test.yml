@@ -6,54 +6,156 @@ on:
       - 0.11.1-2_native_dtype
   workflow_dispatch:
 
+concurrency:
+  group: pdd-test
+  cancel-in-progress: false
+
 jobs:
-  start-pdd:
-    name: Start PDD
+  prepare-run:
+    name: Prepare run
     runs-on: self-hosted
     env:
       CUDA_PY: /home/jiwon_lee/.venvs/official0111-cuda-20260903-121127/bin/python3
       RBLN_PY: /home/jiwon_lee/.venvs/official0111-rbln-20260903-121127/bin/python3
     outputs:
-      result_dir: ${{ steps.start.outputs.result_dir }}
+      result_dir: ${{ steps.result-dir.outputs.result_dir }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Start PDD
-        id: start
+      - name: Allocate result directory
+        id: result-dir
         run: |
-          set -euo pipefail
-          unset RUNNER_TRACKING_ID
-
-          ./start_pdd.sh | tee "$RUNNER_TEMP/start_pdd.out"
-
-          RESULT_DIR=$(grep '^RESULT_DIR=' "$RUNNER_TEMP/start_pdd.out" | cut -d= -f2-)
+          RESULT_DIR="$HOME/vllm-rbln-profile-results/native-dtype-$(date +%Y%m%d-%H%M%S)-gh${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "result_dir=$RESULT_DIR" >> "$GITHUB_OUTPUT"
 
-  check-pdd:
-    name: Check PDD test results
-    needs: start-pdd
+      - name: Prepare run
+        env:
+          RESULT_DIR: ${{ steps.result-dir.outputs.result_dir }}
+        run: ./prepare_run.sh
+
+  start-prefill:
+    name: Start prefill
+    needs: prepare-run
     runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Check PDD test results
-        env:
-          RESULT_DIR: ${{ needs.start-pdd.outputs.result_dir }}
+      - name: Start prefill
+        run: |
+          unset RUNNER_TRACKING_ID
+          ./start_prefill.sh
+
+  start-decode:
+    name: Start decode
+    needs:
+      - prepare-run
+      - start-prefill
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start decode
+        run: |
+          unset RUNNER_TRACKING_ID
+          ./start_decode.sh
+
+  start-proxy:
+    name: Start proxy
+    needs:
+      - prepare-run
+      - start-decode
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start proxy
+        run: |
+          unset RUNNER_TRACKING_ID
+          ./start_proxy.sh
+
+  check-correctness:
+    name: Check correctness
+    needs:
+      - prepare-run
+      - start-proxy
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check correctness
         run: ./check_correctness.sh
+
+  warmup:
+    name: Warmup
+    needs:
+      - prepare-run
+      - check-correctness
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Warmup
+        run: ./warmup.sh
+
+  run-workload:
+    name: Run workload
+    needs:
+      - prepare-run
+      - warmup
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run workload
+        run: ./run_workload.sh --phase measure
 
   stop-pdd:
     name: Stop PDD
     needs:
-      - start-pdd
-      - check-pdd
-    if: ${{ always() }}
+      - prepare-run
+      - start-prefill
+      - start-decode
+      - start-proxy
+      - check-correctness
+      - warmup
+      - run-workload
+    if: ${{ always() && needs.prepare-run.result == 'success' }}
     runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -61,23 +163,40 @@ jobs:
           fetch-depth: 0
 
       - name: Stop PDD
-        env:
-          RESULT_DIR: ${{ needs.start-pdd.outputs.result_dir }}
         run: ./stop_pdd.sh
+
+  summarize-results:
+    name: Summarize results
+    needs:
+      - prepare-run
+      - stop-pdd
+    if: ${{ always() && needs.prepare-run.outputs.result_dir != '' }}
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Summarize results
+        run: |
+          ./summarize_results.sh
+          cat "$RESULT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
   upload-results:
     name: Upload PDD results
     needs:
-      - start-pdd
-      - check-pdd
-      - stop-pdd
-    if: ${{ always() }}
+      - prepare-run
+      - summarize-results
+    if: ${{ always() && needs.prepare-run.outputs.result_dir != '' }}
     runs-on: self-hosted
     steps:
       - name: Upload PDD results
         uses: actions/upload-artifact@v4
         with:
-          name: pdd-results
+          name: pdd-results-${{ github.run_attempt }}
           path: |
-            ~/vllm-rbln-profile-results/
-            !~/vllm-rbln-profile-results/**/cache/**
+            ${{ needs.prepare-run.outputs.result_dir }}/
+            !${{ needs.prepare-run.outputs.result_dir }}/cache/**
