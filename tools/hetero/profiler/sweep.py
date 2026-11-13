@@ -168,7 +168,16 @@ def execute(spec, root, models, cache_root=None, only=()):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "Supply --model KEY=PATH for each model. Set CUDA_PY, RBLN_PY; tools use "
+            "PATH or ALLSMI_BIN, OTELCOL_BIN (trace), PERFETTO_TP_BIN (deep). "
+            "Theory: NPU_MEM_BW_GBPS, NPU_PCIE_GEN, NPU_PCIE_WIDTH. "
+            "Use sweep-dir and cache-root outside the repository. Outputs: runs/, "
+            "results.csv, comparison.csv, dataset/. Cache-root reuses service caches."
+        ),
+    )
     parser.add_argument("--scenarios", type=Path, required=True)
     parser.add_argument("--sweep-dir", type=Path, required=True)
     parser.add_argument("--model", action="append", default=[], metavar="KEY=PATH")
