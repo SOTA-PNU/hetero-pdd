@@ -38,8 +38,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-EXPECTED_BRANCH = "0.11.1-2_native_dtype"
-REQUIRED_COMMIT = "972ce20cf53b0d2d50c4155f9d44be6879ede966"
 STEPS = (
     "prepare_run", "start_prefill", "start_decode", "start_proxy",
     "check_correctness", "warmup", "run_workload", "stop_pdd", "summarize_results",
@@ -228,17 +226,8 @@ def check_code(runtime, clean=True):
     if actual != runtime["COMMIT"]:
         raise RunError("recorded commit does not match repository HEAD")
     branch = capture(["git", "-C", repo, "branch", "--show-current"], env=env)
-    if branch and branch != EXPECTED_BRANCH:
-        raise RunError(
-            f"branch mismatch: expected {EXPECTED_BRANCH} or detached HEAD, "
-            f"got {branch}"
-        )
     if branch != runtime["BRANCH"]:
         raise RunError("recorded branch does not match repository branch")
-    capture(
-        ["git", "-C", repo, "merge-base", "--is-ancestor", REQUIRED_COMMIT, actual],
-        env=env,
-    )
     if clean and capture(
         ["git", "-C", repo, "status", "--porcelain=v1", "--untracked-files=all"],
         env=env,

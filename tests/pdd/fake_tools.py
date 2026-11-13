@@ -39,12 +39,10 @@ def main():
         elif args == ["rev-parse", "HEAD"]:
             print(control().get("commit", "199605d9d22fef5e0e31c416fea5e479a7b1ce12"))
         elif args == ["branch", "--show-current"]:
-            print(control().get("branch", "0.11.1-2_native_dtype"))
+            print(control().get("branch", "main"))
         elif args[:1] == ["status"]:
             if control().get("dirty"):
                 print(" M example.py")
-        elif args[:2] == ["merge-base", "--is-ancestor"]:
-            return 1 if control().get("wrong_ancestor") else 0
         else:
             raise SystemExit(f"unhandled fixture Git invocation: {args!r}")
         return 0

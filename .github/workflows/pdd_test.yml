@@ -3,7 +3,7 @@ name: PDD Test
 on:
   push:
     branches:
-      - 0.11.1-2_native_dtype
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -15,8 +15,8 @@ jobs:
     name: Prepare run
     runs-on: self-hosted
     env:
-      CUDA_PY: /home/jiwon_lee/.venvs/official0111-cuda-20260903-121127/bin/python3
-      RBLN_PY: /home/jiwon_lee/.venvs/official0111-rbln-20260903-121127/bin/python3
+      CUDA_PY: ${{ vars.CUDA_PY }}
+      RBLN_PY: ${{ vars.RBLN_PY }}
     outputs:
       result_dir: ${{ steps.result-dir.outputs.result_dir }}
     steps:

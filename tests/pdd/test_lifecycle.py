@@ -301,11 +301,28 @@ class LifecycleTests(unittest.TestCase):
         result = self.call("prepare_run", expected=1)
         self.assertIn("clean", result.stdout + result.stderr)
 
+    def test_prepare_and_launch_accept_work_branch_and_detached_head(self):
+        for index, branch in enumerate(("delivery/pdd", "")):
+            with self.subTest(branch=branch):
+                self.result = self.directory / "results" / f"run-{index}"
+                self.control(branch=branch)
+                self.prepare()
+                self.assertEqual(read_env(self.result / "runtime.env")["BRANCH"], branch)
+                self.call("start_prefill")
+                self.call("stop_pdd")
+
     def test_launch_rejects_changed_commit(self):
         self.prepare()
         self.control(commit="a" * 40)
         result = self.call("start_prefill", expected=1)
         self.assertIn("commit", result.stdout + result.stderr)
+        self.assertFalse((self.result / "fixture_prefill_invocation.json").exists())
+
+    def test_launch_rejects_changed_branch(self):
+        self.prepare()
+        self.control(branch="delivery/pdd")
+        result = self.call("start_prefill", expected=1)
+        self.assertIn("recorded branch", result.stdout + result.stderr)
         self.assertFalse((self.result / "fixture_prefill_invocation.json").exists())
 
     def test_summary_with_missing_state_is_diagnostic(self):
