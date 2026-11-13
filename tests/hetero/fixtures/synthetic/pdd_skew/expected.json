@@ -1,0 +1,107 @@
+{
+  "expected_ids_by_role": {
+    "decode0": [
+      "pdd_skew-seed7-req0000",
+      "pdd_skew-seed7-req0001",
+      "pdd_skew-seed7-req0002",
+      "pdd_skew-seed7-req0003"
+    ],
+    "decode1": [],
+    "prefill": [
+      "pdd_skew-seed7-req0000",
+      "pdd_skew-seed7-req0001",
+      "pdd_skew-seed7-req0002",
+      "pdd_skew-seed7-req0003"
+    ]
+  },
+  "missing_ids": [],
+  "planned_count": 4,
+  "planned_ids": [
+    "pdd_skew-seed7-req0000",
+    "pdd_skew-seed7-req0001",
+    "pdd_skew-seed7-req0002",
+    "pdd_skew-seed7-req0003"
+  ],
+  "raw_count": 4,
+  "requests": {
+    "pdd_skew-seed7-req0000": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    },
+    "pdd_skew-seed7-req0001": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    },
+    "pdd_skew-seed7-req0002": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    },
+    "pdd_skew-seed7-req0003": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    }
+  },
+  "run_status": "PASS",
+  "success_count": 4,
+  "summary": {
+    "actual_input_tokens_total": 8,
+    "actual_output_tokens_total": 12,
+    "completed_requests_per_second": 0.4,
+    "makespan_seconds": 10,
+    "output_tokens_per_second": 1.2
+  },
+  "undefined_metrics": {},
+  "unique_id_count": 4
+}

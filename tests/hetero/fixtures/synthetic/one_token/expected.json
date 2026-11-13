@@ -1,0 +1,41 @@
+{
+  "expected_ids_by_role": {
+    "gpu": [
+      "one_token-seed7-req0000"
+    ],
+    "npu0": [],
+    "npu1": []
+  },
+  "missing_ids": [],
+  "planned_count": 1,
+  "planned_ids": [
+    "one_token-seed7-req0000"
+  ],
+  "raw_count": 1,
+  "requests": {
+    "one_token-seed7-req0000": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    }
+  },
+  "run_status": "PASS",
+  "success_count": 1,
+  "summary": {
+    "actual_input_tokens_total": 2,
+    "actual_output_tokens_total": 1,
+    "completed_requests_per_second": 0.25,
+    "makespan_seconds": 4,
+    "output_tokens_per_second": 0.25
+  },
+  "undefined_metrics": {
+    "tp_ot_seconds": "not_applicable"
+  },
+  "unique_id_count": 1
+}

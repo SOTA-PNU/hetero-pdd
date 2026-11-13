@@ -1,0 +1,32 @@
+{
+  "generation": {
+    "ignore_eos": true,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "input_tokens": 512,
+  "model": "Qwen/Qwen3-0.6B",
+  "output_tokens": 128,
+  "prefix_reuse": "low_unique_prompts",
+  "requests": 18,
+  "seed": 20260924,
+  "slots": [
+    {
+      "base_url": "http://127.0.0.1:42265",
+      "index": 0,
+      "target": "gpu"
+    },
+    {
+      "base_url": "http://127.0.0.1:52091",
+      "index": 1,
+      "target": "npu0"
+    },
+    {
+      "base_url": "http://127.0.0.1:56753",
+      "index": 2,
+      "target": "npu1"
+    }
+  ],
+  "tokenizer": "<REDACTED_PATH>",
+  "warmup_per_endpoint": 1
+}

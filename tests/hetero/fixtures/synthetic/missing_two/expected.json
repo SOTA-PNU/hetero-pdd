@@ -1,0 +1,215 @@
+{
+  "expected_ids_by_role": {
+    "gpu": [
+      "missing_two-seed7-req0000",
+      "missing_two-seed7-req0001",
+      "missing_two-seed7-req0002",
+      "missing_two-seed7-req0003",
+      "missing_two-seed7-req0004",
+      "missing_two-seed7-req0005",
+      "missing_two-seed7-req0006",
+      "missing_two-seed7-req0007",
+      "missing_two-seed7-req0008",
+      "missing_two-seed7-req0009",
+      "missing_two-seed7-req0010",
+      "missing_two-seed7-req0011",
+      "missing_two-seed7-req0012",
+      "missing_two-seed7-req0013"
+    ],
+    "npu0": [],
+    "npu1": []
+  },
+  "missing_ids": [
+    "missing_two-seed7-req0014",
+    "missing_two-seed7-req0015"
+  ],
+  "planned_count": 16,
+  "planned_ids": [
+    "missing_two-seed7-req0000",
+    "missing_two-seed7-req0001",
+    "missing_two-seed7-req0002",
+    "missing_two-seed7-req0003",
+    "missing_two-seed7-req0004",
+    "missing_two-seed7-req0005",
+    "missing_two-seed7-req0006",
+    "missing_two-seed7-req0007",
+    "missing_two-seed7-req0008",
+    "missing_two-seed7-req0009",
+    "missing_two-seed7-req0010",
+    "missing_two-seed7-req0011",
+    "missing_two-seed7-req0012",
+    "missing_two-seed7-req0013",
+    "missing_two-seed7-req0014",
+    "missing_two-seed7-req0015"
+  ],
+  "raw_count": 14,
+  "requests": {
+    "missing_two-seed7-req0000": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0001": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0002": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0003": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0004": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0005": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0006": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0007": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0008": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0009": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0010": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0011": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0012": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    },
+    "missing_two-seed7-req0013": {
+      "chunk_itl_seconds": [],
+      "client_send_delay_seconds": 1,
+      "e2e_seconds": 4,
+      "queue_wait_seconds": 0,
+      "second_token_delay_seconds": null,
+      "service_seconds": 3,
+      "token_itl_seconds": [],
+      "tp_ot_seconds": null,
+      "ttft_seconds": 3
+    }
+  },
+  "run_status": "FAILED",
+  "success_count": 14,
+  "summary": {
+    "actual_input_tokens_total": 28,
+    "actual_output_tokens_total": 14,
+    "completed_requests_per_second": 3.5,
+    "makespan_seconds": 4,
+    "output_tokens_per_second": 3.5
+  },
+  "undefined_metrics": {
+    "tp_ot_seconds": "not_applicable"
+  },
+  "unique_id_count": 14
+}

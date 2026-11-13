@@ -1,0 +1,1527 @@
+{
+  "sweep_name": "initial",
+  "scenarios": [
+    {
+      "name": "s1_b0",
+      "pair_id": "s1",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 1024,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 32,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i512_o128",
+          "input_tokens": 512,
+          "output_tokens": 128,
+          "requests": 176,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 1,
+            "npu0": 1,
+            "npu1": 1
+          }
+        }
+      ],
+      "estimation": {
+        "i512_o128": {
+          "reference": "s1_b0",
+          "reference_seconds_per_request": 0.2337212280059854,
+          "prefill_fraction": 0.07695572721839784,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.2337212280059854,
+          "expected_seconds": 41.13493612905343,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 41.13493612905343,
+          "uncapped_requests": 161,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s1_pdd",
+      "pair_id": "s1",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 1024,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 32,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i512_o128",
+          "input_tokens": 512,
+          "output_tokens": 128,
+          "requests": 176,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 2
+        }
+      ],
+      "estimation": {
+        "i512_o128": {
+          "reference": "s1_pdd",
+          "reference_seconds_per_request": 0.8307576621882617,
+          "prefill_fraction": 0.03187837470995157,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.8307576621882617,
+          "expected_seconds": 146.21334854513407,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 146.21334854513407,
+          "uncapped_requests": 161,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s2_b0",
+      "pair_id": "s2",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 2.3494075246853754,
+          "expected_seconds": 37.590520394966006,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 37.590520394966006,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "reused_for": [
+        "S4_prime"
+      ]
+    },
+    {
+      "name": "s2_pdd",
+      "pair_id": "s2",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "reused_for": [
+        "S4_prime"
+      ]
+    },
+    {
+      "name": "s3a_b1_b0",
+      "pair_id": "s3a_b1",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 40,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 1,
+            "npu0": 1,
+            "npu1": 1
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 9.135246071514269,
+          "expected_seconds": 292.3278742884566,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3a_b1_pdd",
+      "pair_id": "s3a_b1",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 40,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 2
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 16.287778465184616,
+          "expected_seconds": 521.2089108859077,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3a_b4_b0",
+      "pair_id": "s3a_b4",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 48,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 2.283811517878567,
+          "expected_seconds": 73.08196857211415,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3a_b4_pdd",
+      "pair_id": "s3a_b4",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 48,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.071944616296154,
+          "expected_seconds": 130.30222772147692,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3a_b2_b0",
+      "pair_id": "s3a_b2",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 2,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 80,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 2,
+            "npu0": 2,
+            "npu1": 2
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.567623035757134,
+          "expected_seconds": 146.1639371442283,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      },
+      "notes": "배치 8 제외: B0 NPU 서버가 max_num_seqs=8에서 엔진 초기화 중 실패했다. vLLM 0.22.0의 apply_top_k_top_p는 HAS_TRITON and logits.shape[0] >= 8이면 Triton 경로를 쓰며, 그 경로가 부르는 num_compute_units가 RBLN 플랫폼에 구현돼 있지 않아 NotImplementedError가 발생했다. 이번 스윕의 PDD decode 전용 서버는 배치 8에서 성공했으나 B0 쌍이 없어 비교에서 제외한다."
+    },
+    {
+      "name": "s3a_b2_pdd",
+      "pair_id": "s3a_b2",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 2,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 80,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 4
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 8.143889232592308,
+          "expected_seconds": 260.60445544295385,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      },
+      "notes": "배치 8 제외: B0 NPU 서버가 max_num_seqs=8에서 엔진 초기화 중 실패했다. vLLM 0.22.0의 apply_top_k_top_p는 HAS_TRITON and logits.shape[0] >= 8이면 Triton 경로를 쓰며, 그 경로가 부르는 num_compute_units가 RBLN 플랫폼에 구현돼 있지 않아 NotImplementedError가 발생했다. 이번 스윕의 PDD decode 전용 서버는 배치 8에서 성공했으나 B0 쌍이 없어 비교에서 제외한다."
+    },
+    {
+      "name": "s3b_c2_b0",
+      "pair_id": "s3b_c2",
+      "system": "B0",
+      "comparison": "equal_concurrency",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 1,
+            "npu0": 1,
+            "npu1": 0
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 13.702869107271404,
+          "expected_seconds": 438.4918114326849,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3b_c2_pdd",
+      "pair_id": "s3b_c2",
+      "system": "PDD",
+      "comparison": "equal_concurrency",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 32,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 2
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 16.287778465184616,
+          "expected_seconds": 521.2089108859077,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3b_c4_b0",
+      "pair_id": "s3b_c4",
+      "system": "B0",
+      "comparison": "equal_concurrency",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 48,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 2,
+            "npu0": 1,
+            "npu1": 1
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 6.851434553635702,
+          "expected_seconds": 219.24590571634246,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3b_c4_pdd",
+      "pair_id": "s3b_c4",
+      "system": "PDD",
+      "comparison": "equal_concurrency",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 48,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 4
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 8.143889232592308,
+          "expected_seconds": 260.60445544295385,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3b_c8_b0",
+      "pair_id": "s3b_c8",
+      "system": "B0",
+      "comparison": "equal_concurrency",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 64,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 3,
+            "npu0": 3,
+            "npu1": 2
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 3.425717276817851,
+          "expected_seconds": 109.62295285817123,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 75.18104078993201,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s3b_c8_pdd",
+      "pair_id": "s3b_c8",
+      "system": "PDD",
+      "comparison": "equal_concurrency",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 64,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.071944616296154,
+          "expected_seconds": 130.30222772147692,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 131.1967003569007,
+          "uncapped_requests": 32,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s4_qwen3-0.6b_b0",
+      "pair_id": "s4_qwen3-0.6b",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 304,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s1_b0",
+          "reference_seconds_per_request": 0.2337212280059854,
+          "prefill_fraction": 0.07695572721839784,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.12627838281421933,
+          "expected_seconds": 38.38862837552267,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 142.10250662763912,
+          "uncapped_requests": 297,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s4_qwen3-0.6b_pdd",
+      "pair_id": "s4_qwen3-0.6b",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 304,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s1_pdd",
+          "reference_seconds_per_request": 0.8307576621882617,
+          "prefill_fraction": 0.03187837470995157,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.43020365055561444,
+          "expected_seconds": 130.7819097689068,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 505.10065861046314,
+          "uncapped_requests": 297,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s4_qwen3-4b_b0",
+      "pair_id": "s4_qwen3-4b",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen3-4b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 304,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s1_b0",
+          "reference_seconds_per_request": 0.2337212280059854,
+          "prefill_fraction": 0.07695572721839784,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Unmeasured 4B: use the faster 0.6B reference provisionally; memory/compilation and duration need HW verification.",
+          "seconds_per_request": 0.12627838281421933,
+          "expected_seconds": 38.38862837552267,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 142.10250662763912,
+          "uncapped_requests": 297,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s4_qwen3-4b_pdd",
+      "pair_id": "s4_qwen3-4b",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen3-4b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i2048_o256",
+          "input_tokens": 2048,
+          "output_tokens": 256,
+          "requests": 304,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i2048_o256": {
+          "reference": "s1_pdd",
+          "reference_seconds_per_request": 0.8307576621882617,
+          "prefill_fraction": 0.03187837470995157,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Unmeasured 4B: use the faster 0.6B reference provisionally; memory/compilation and duration need HW verification.",
+          "seconds_per_request": 0.43020365055561444,
+          "expected_seconds": 130.7819097689068,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 505.10065861046314,
+          "uncapped_requests": 297,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s5_b0",
+      "pair_id": "s5",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        },
+        {
+          "name": "i2176_o2176",
+          "input_tokens": 2176,
+          "output_tokens": 2176,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        },
+        {
+          "name": "i256_o4096",
+          "input_tokens": 256,
+          "output_tokens": 4096,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 2.3494075246853754,
+          "expected_seconds": 37.590520394966006,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 37.590520394966006,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i2176_o2176": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 18.98976923402077,
+          "expected_seconds": 303.8363077443323,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 319.51942335721105,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i256_o4096": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 35.63013094335616,
+          "expected_seconds": 570.0820950936985,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 601.4483263194561,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s5_pdd",
+      "pair_id": "s5",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        },
+        {
+          "name": "i2176_o2176",
+          "input_tokens": 2176,
+          "output_tokens": 2176,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        },
+        {
+          "name": "i256_o4096",
+          "input_tokens": 256,
+          "output_tokens": 4096,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i2176_o2176": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 34.52257518282179,
+          "expected_seconds": 552.3612029251486,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 557.5859765168279,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i256_o4096": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 64.94525347949043,
+          "expected_seconds": 1039.124055671847,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 1049.5736028552055,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s5t_pdd",
+      "pair_id": "s5t",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "trace",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        },
+        {
+          "name": "i2176_o2176",
+          "input_tokens": 2176,
+          "output_tokens": 2176,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        },
+        {
+          "name": "i256_o4096",
+          "input_tokens": 256,
+          "output_tokens": 4096,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i2176_o2176": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 34.52257518282179,
+          "expected_seconds": 552.3612029251486,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 557.5859765168279,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        },
+        "i256_o4096": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 64.94525347949043,
+          "expected_seconds": 1039.124055671847,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 1049.5736028552055,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s6_b0",
+      "pair_id": "s6",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o1",
+          "input_tokens": 4096,
+          "output_tokens": 1,
+          "requests": 512,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        },
+        {
+          "name": "i32_o4096",
+          "input_tokens": 32,
+          "output_tokens": 4096,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 4,
+            "npu0": 4,
+            "npu1": 4
+          }
+        }
+      ],
+      "estimation": {
+        "i4096_o1": {
+          "reference": "sweep_pilot_s6/results.csv and runs/s6_{b0,pdd}/i4096_o1/profile/summary.json",
+          "confirmed_date": "2026-11-09",
+          "pilot_requests": 16,
+          "pilot_makespan_seconds": {
+            "B0": 6.858987174928188,
+            "PDD": 7.472182720899582
+          },
+          "formula": "min(512, ceil(16 * 120 / min(B0_makespan, PDD_makespan)))",
+          "seconds_per_request": 0.42868669843301177,
+          "expected_seconds": 120.0322755612433,
+          "requested_minimum_seconds": 120,
+          "uncapped_requests": 280,
+          "capped_at_512": false,
+          "note": "Linear extrapolation from the 16-request pilot; expected duration is estimated."
+        },
+        "i32_o4096": {
+          "reference": "s2_b0",
+          "reference_seconds_per_request": 2.3494075246853754,
+          "prefill_fraction": 0.055840467111462566,
+          "formula": "4096 / S2 output_tokens_per_second (decode-dominant)",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 37.590520394966006,
+          "expected_seconds": 601.4483263194561,
+          "requested_minimum_seconds": 120,
+          "output_rate_only_seconds": 601.4483263194561,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "pilot_adjust": false,
+      "pilot_resolution": {
+        "date": "2026-11-09",
+        "i32_o4096": "Keep 16 requests unchanged as requested. No decode pilot in sweep_pilot_s6; existing S2-based estimated durations exceed 120 seconds for both configurations. Pilot flag cleared by this decision, not by a new decode measurement."
+      }
+    },
+    {
+      "name": "s6_pdd",
+      "pair_id": "s6",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o1",
+          "input_tokens": 4096,
+          "output_tokens": 1,
+          "requests": 512,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        },
+        {
+          "name": "i32_o4096",
+          "input_tokens": 32,
+          "output_tokens": 4096,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o1": {
+          "reference": "sweep_pilot_s6/results.csv and runs/s6_{b0,pdd}/i4096_o1/profile/summary.json",
+          "confirmed_date": "2026-11-09",
+          "pilot_requests": 16,
+          "pilot_makespan_seconds": {
+            "B0": 6.858987174928188,
+            "PDD": 7.472182720899582
+          },
+          "formula": "min(512, ceil(16 * 120 / min(B0_makespan, PDD_makespan)))",
+          "seconds_per_request": 0.46701142005622387,
+          "expected_seconds": 130.76319761574268,
+          "requested_minimum_seconds": 120,
+          "uncapped_requests": 280,
+          "capped_at_512": false,
+          "note": "Linear extrapolation from the 16-request pilot; expected duration is estimated."
+        },
+        "i32_o4096": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "4096 / S2 output_tokens_per_second (decode-dominant)",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 65.59835017845035,
+          "expected_seconds": 1049.5736028552055,
+          "requested_minimum_seconds": 120,
+          "output_rate_only_seconds": 1049.5736028552055,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "pilot_adjust": false,
+      "pilot_resolution": {
+        "date": "2026-11-09",
+        "i32_o4096": "Keep 16 requests unchanged as requested. No decode pilot in sweep_pilot_s6; existing S2-based estimated durations exceed 120 seconds for both configurations. Pilot flag cleared by this decision, not by a new decode measurement."
+      }
+    },
+    {
+      "name": "s7_pdd_r0",
+      "pair_id": "s7",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "trace",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "note": "설정 호환성 문제 재현용: HND producer에서는 layout_reorder=0을 사용한다. reorder 1은 실제 NHD producer에만 사용하며, S7 reorder 1은 HND와의 비호환 조합을 재현한다."
+    },
+    {
+      "name": "s7_pdd_r1",
+      "pair_id": "s7",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "trace",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 1
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      },
+      "note": "설정 호환성 문제 재현용: HND producer에서는 layout_reorder=0을 사용한다. reorder 1은 실제 NHD producer에만 사용하며, S7 reorder 1은 HND와의 비호환 조합을 재현한다."
+    },
+    {
+      "name": "s8_pdd",
+      "pair_id": "s8",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "trace",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      }
+    }
+  ]
+}

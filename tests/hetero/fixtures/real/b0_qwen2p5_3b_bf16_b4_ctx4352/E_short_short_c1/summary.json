@@ -1,0 +1,54 @@
+{
+  "actual_input_tokens_total": 256,
+  "actual_output_tokens_total": 32,
+  "arrival_model": "finite_burst_all_at_once",
+  "chunk_itl_only_request_count": 0,
+  "completed_requests_per_second": 5.1138877498544915,
+  "e2e_mean_seconds": 0.1955459425225854,
+  "e2e_p50_seconds": 0.1955459425225854,
+  "e2e_p95_seconds": 0.1955459425225854,
+  "failure_count": 0,
+  "incomplete_count": 0,
+  "makespan_seconds": 0.1955459425225854,
+  "output_tokens_per_second": 163.64440799534373,
+  "queue_mean_seconds": 0.0010890457779169083,
+  "queue_p95_seconds": 0.0010890457779169083,
+  "request_count": 1,
+  "retry_count": 0,
+  "routing_policy": "central_fifo_work_conserving_slots",
+  "sample_size": 1,
+  "seed": 20260924,
+  "slo_e2e_seconds": null,
+  "slo_goodput_requests_per_second": 5.1138877498544915,
+  "slo_ttft_seconds": null,
+  "slots": [
+    {
+      "base_url": "http://127.0.0.1:57175",
+      "index": 0,
+      "target": "gpu"
+    },
+    {
+      "base_url": "http://127.0.0.1:40231",
+      "index": 1,
+      "target": "npu0"
+    },
+    {
+      "base_url": "http://127.0.0.1:50023",
+      "index": 2,
+      "target": "npu1"
+    }
+  ],
+  "status": "PASS",
+  "success_count": 1,
+  "target_request_counts": {
+    "gpu": 1
+  },
+  "tie_break": "declared slot order initially; completion time then slot index",
+  "timeout_count": 0,
+  "token_itl_request_count": 1,
+  "tpot_mean_seconds": 0.004900055306573068,
+  "ttft_mean_seconds": 0.043358118273317814,
+  "ttft_p50_seconds": 0.043358118273317814,
+  "ttft_p95_seconds": 0.043358118273317814,
+  "workload": "E_short_short_c1"
+}

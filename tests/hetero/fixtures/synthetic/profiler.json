@@ -1,0 +1,562 @@
+{
+  "workload": {
+    "name": "w",
+    "input_tokens": 2,
+    "output_tokens": 3,
+    "requests": 1,
+    "seed": 7,
+    "warmup": 0,
+    "concurrency": 1
+  },
+  "steps": [
+    "check_tools",
+    "collector_start",
+    "service_start",
+    "host_buffer",
+    "allsmi_start",
+    "links",
+    "w:warmup",
+    "w:scrape_start",
+    "w:before",
+    "w:start_profile:decode0",
+    "w:start_profile:decode1",
+    "w:start_profile:prefill",
+    "w:measure",
+    "w:stop_profile:decode0",
+    "w:stop_profile:decode1",
+    "w:stop_profile:prefill",
+    "w:after",
+    "w:scrape_stop",
+    "span_wait",
+    "all-smi_stop",
+    "service_stop",
+    "collector_stop"
+  ],
+  "trace": {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "decode0"
+              }
+            }
+          ]
+        },
+        "scopeSpans": [
+          {
+            "spans": [
+              {
+                "attributes": [
+                  {
+                    "key": "gen_ai.request.id",
+                    "value": {
+                      "stringValue": "cmpl-id-0"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "options": [
+    [
+      "baseline",
+      "none",
+      {},
+      {}
+    ],
+    [
+      "baseline",
+      "monitor",
+      {},
+      {}
+    ],
+    [
+      "baseline",
+      "trace",
+      {
+        "gpu": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "gpu",
+          "OTEL_BSP_SCHEDULE_DELAY": "500"
+        },
+        "npu0": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "npu0",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/npu0"
+        },
+        "npu1": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "npu1",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/npu1"
+        }
+      },
+      {
+        "gpu": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ],
+        "npu0": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ],
+        "npu1": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ]
+      }
+    ],
+    [
+      "baseline",
+      "deep",
+      {
+        "gpu": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "gpu",
+          "OTEL_BSP_SCHEDULE_DELAY": "500"
+        },
+        "npu0": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "npu0",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/npu0",
+          "RBLN_PROFILER": "1"
+        },
+        "npu1": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "npu1",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/npu1",
+          "RBLN_PROFILER": "1"
+        }
+      },
+      {
+        "gpu": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/gpu\"}"
+        ],
+        "npu0": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/npu0\"}"
+        ],
+        "npu1": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/npu1\"}"
+        ]
+      }
+    ],
+    [
+      "pdd",
+      "none",
+      {},
+      {}
+    ],
+    [
+      "pdd",
+      "monitor",
+      {},
+      {}
+    ],
+    [
+      "pdd",
+      "trace",
+      {
+        "decode0": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "decode0",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/decode0"
+        },
+        "decode1": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "decode1",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/decode1"
+        },
+        "prefill": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "prefill",
+          "OTEL_BSP_SCHEDULE_DELAY": "500"
+        }
+      },
+      {
+        "decode0": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ],
+        "decode1": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ],
+        "prefill": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces"
+        ]
+      }
+    ],
+    [
+      "pdd",
+      "deep",
+      {
+        "decode0": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "decode0",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/decode0",
+          "RBLN_PROFILER": "1"
+        },
+        "decode1": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "decode1",
+          "OTEL_BSP_SCHEDULE_DELAY": "500",
+          "VLLM_RBLN_METRICS": "1",
+          "VLLM_RBLN_METRICS_DIR": "run/rbln_metrics/decode1",
+          "RBLN_PROFILER": "1"
+        },
+        "prefill": {
+          "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+          "OTEL_SERVICE_NAME": "prefill",
+          "OTEL_BSP_SCHEDULE_DELAY": "500"
+        }
+      },
+      {
+        "decode0": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/decode0\"}"
+        ],
+        "decode1": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/decode1\"}"
+        ],
+        "prefill": [
+          "--otlp-traces-endpoint",
+          "http://127.0.0.1:12345/v1/traces",
+          "--profiler-config",
+          "{\"profiler\": \"torch\", \"torch_profiler_dir\": \"run/torch_traces/prefill\"}"
+        ]
+      }
+    ]
+  ],
+  "routing": [
+    [
+      {
+        "name": "w",
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "requests": 1,
+        "seed": 7,
+        "warmup": 0,
+        "slots": {
+          "gpu": 1,
+          "npu0": 2,
+          "npu1": 3
+        }
+      },
+      {
+        "model_name": "mock",
+        "model_path": "unused",
+        "configuration": "baseline",
+        "endpoints": {
+          "gpu": "http://gpu:8000",
+          "npu0": "http://npu0:8000",
+          "npu1": "http://npu1:8000"
+        }
+      },
+      [
+        "--worker",
+        "gpu=http://gpu:8000=1",
+        "--worker",
+        "npu0=http://npu0:8000=2",
+        "--worker",
+        "npu1=http://npu1:8000=3"
+      ]
+    ],
+    [
+      {
+        "name": "w",
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "requests": 1,
+        "seed": 7,
+        "warmup": 0,
+        "concurrency": 1
+      },
+      {
+        "model_name": "mock",
+        "model_path": "unused",
+        "configuration": "pdd",
+        "endpoints": {
+          "decode0": "http://decode0:8000",
+          "decode1": "http://decode1:8000",
+          "prefill": "http://prefill:8000",
+          "proxy": "http://proxy:8000"
+        }
+      },
+      [
+        "--endpoint",
+        "http://proxy:8000",
+        "--concurrency",
+        "1"
+      ]
+    ]
+  ],
+  "config": {
+    "model_name": "mock",
+    "model_path": "unused",
+    "configuration": "pdd",
+    "endpoints": {
+      "decode0": "http://decode0:8000",
+      "decode1": "http://decode1:8000",
+      "prefill": "http://prefill:8000",
+      "proxy": "http://proxy:8000"
+    },
+    "metrics_endpoints": {
+      "decode0": "http://decode0:8000/metrics",
+      "decode1": "http://decode1:8000/metrics",
+      "prefill": "http://prefill:8000/metrics"
+    },
+    "decoder_roles": {
+      "decode0:8000": "decode0",
+      "decode1:8000": "decode1"
+    }
+  },
+  "invalid": [
+    [
+      "pdd",
+      [
+        {
+          "name": "../escape",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1
+        }
+      ]
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "service",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1
+        }
+      ]
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": true,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1
+        }
+      ]
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": -1,
+          "concurrency": 1
+        }
+      ]
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 0
+        }
+      ]
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1,
+          "typo": 1
+        }
+      ]
+    ],
+    [
+      "pdd",
+      []
+    ],
+    [
+      "pdd",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1
+        },
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "concurrency": 1
+        }
+      ]
+    ],
+    [
+      "baseline",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "slots": {
+            "gpu": 0,
+            "npu0": 0,
+            "npu1": 0
+          }
+        }
+      ]
+    ],
+    [
+      "baseline",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "slots": {
+            "gpu": 1,
+            "npu0": -1,
+            "npu1": 1
+          }
+        }
+      ]
+    ],
+    [
+      "baseline",
+      [
+        {
+          "name": "w",
+          "input_tokens": 2,
+          "output_tokens": 3,
+          "requests": 1,
+          "seed": 7,
+          "warmup": 0,
+          "slots": {
+            "gpu": 1
+          }
+        }
+      ]
+    ]
+  ],
+  "repo_args": [
+    "--configuration",
+    "pdd",
+    "--mode",
+    "none",
+    "--run-dir",
+    ".",
+    "--workloads",
+    "unused.json"
+  ],
+  "failed_rows": [
+    {
+      "http_status": 500,
+      "error": null,
+      "requested_output_tokens": 3,
+      "actual_output_tokens": 3,
+      "success": true
+    },
+    {
+      "http_status": 200,
+      "error": "failed",
+      "requested_output_tokens": 3,
+      "actual_output_tokens": 3,
+      "success": true
+    },
+    {
+      "http_status": 200,
+      "error": null,
+      "requested_output_tokens": 3,
+      "actual_output_tokens": 2,
+      "success": true
+    }
+  ],
+  "span_cases": [
+    [
+      "id",
+      []
+    ],
+    [
+      "missing",
+      [
+        {
+          "role": "decode0",
+          "request_id": "cmpl-missing-0"
+        }
+      ]
+    ]
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "configuration": "pdd",
+  "endpoints": {
+    "decode0": "http://decode0:8000",
+    "decode1": "http://decode1:8000",
+    "prefill": "http://prefill:8000"
+  }
+}

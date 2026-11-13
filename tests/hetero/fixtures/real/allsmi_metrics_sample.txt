@@ -1,0 +1,49 @@
+# PC4: all-smi 0.28.1, 2026-11-06; host/user labels redacted.
+# HELP all_smi_gpu_utilization GPU utilization percentage (omitted when the device reports no utilization)
+# TYPE all_smi_gpu_utilization gauge
+all_smi_gpu_utilization{gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_0>", gpu_index="0"} 0
+# HELP all_smi_gpu_memory_used_bytes GPU memory used in bytes
+# TYPE all_smi_gpu_memory_used_bytes gauge
+all_smi_gpu_memory_used_bytes{gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_0>", gpu_index="0"} 0
+# HELP all_smi_gpu_power_consumption_watts GPU power consumption in watts (omitted when the device reports no power)
+# TYPE all_smi_gpu_power_consumption_watts gauge
+all_smi_gpu_power_consumption_watts{gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_0>", gpu_index="0"} 16.065
+# HELP all_smi_gpu_info GPU/NPU device information
+# TYPE all_smi_gpu_info gauge
+all_smi_gpu_info{gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_0>", gpu_index="0", type="GPU", architecture="Blackwell", brand="NvidiaRTX", compute_mode="Default", cuda_version="13.0", driver_version="580.105.08", ecc_mode_current="Disabled", lib_name="CUDA", lib_version="13.0", pcie_gen_max="5", pcie_width_max="16", performance_state="Zero", power_limit_current="600.00", power_limit_default="600.00", power_limit_max="600.00", power_limit_min="150.00", vbios_version="98.02.81.00.07"} 1
+# HELP all_smi_gpu_utilization GPU utilization percentage (omitted when the device reports no utilization)
+# TYPE all_smi_gpu_utilization gauge
+all_smi_gpu_utilization{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_1>", gpu_index="1"} 0
+# HELP all_smi_gpu_memory_used_bytes GPU memory used in bytes
+# TYPE all_smi_gpu_memory_used_bytes gauge
+all_smi_gpu_memory_used_bytes{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_1>", gpu_index="1"} 0
+# HELP all_smi_gpu_power_consumption_watts GPU power consumption in watts (omitted when the device reports no power)
+# TYPE all_smi_gpu_power_consumption_watts gauge
+all_smi_gpu_power_consumption_watts{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_1>", gpu_index="1"} 25.554387
+# HELP all_smi_gpu_info GPU/NPU device information
+# TYPE all_smi_gpu_info gauge
+all_smi_gpu_info{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_1>", gpu_index="1", type="NPU", board_info="0005000c", device_path="rbln0", firmware_version="3.2.2", kmd_version="3.2.2", lib_name="RBLN-SDK", lib_version="3.2.2", location="5", pci_bus_id="0000:34:00.0", pci_link_speed="32.0GT/s", pci_numa_node="0", pcie_link_width="16", performance_state="P14", serial_id="<REDACTED_SERIAL_0>", status="normal"} 1
+# HELP all_smi_gpu_utilization GPU utilization percentage (omitted when the device reports no utilization)
+# TYPE all_smi_gpu_utilization gauge
+all_smi_gpu_utilization{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_2>", gpu_index="2"} 0
+# HELP all_smi_gpu_memory_used_bytes GPU memory used in bytes
+# TYPE all_smi_gpu_memory_used_bytes gauge
+all_smi_gpu_memory_used_bytes{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_2>", gpu_index="2"} 0
+# HELP all_smi_gpu_power_consumption_watts GPU power consumption in watts (omitted when the device reports no power)
+# TYPE all_smi_gpu_power_consumption_watts gauge
+all_smi_gpu_power_consumption_watts{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_2>", gpu_index="2"} 24.914075999999998
+# HELP all_smi_gpu_info GPU/NPU device information
+# TYPE all_smi_gpu_info gauge
+all_smi_gpu_info{gpu="RBLN-CA22", instance="<REDACTED_HOST>", gpu_uuid="<REDACTED_DEVICE_UUID_2>", gpu_index="2", type="NPU", board_info="0005000c", device_path="rbln1", firmware_version="3.2.2", kmd_version="3.2.2", lib_name="RBLN-SDK", lib_version="3.2.2", location="5", pci_bus_id="0000:ac:00.0", pci_link_speed="32.0GT/s", pci_numa_node="0", pcie_link_width="16", performance_state="P14", serial_id="<REDACTED_SERIAL_1>", status="normal"} 1
+# HELP all_smi_rebellions_device_info Rebellions device information
+# TYPE all_smi_rebellions_device_info gauge
+all_smi_rebellions_device_info{npu="RBLN-CA22", instance="<REDACTED_HOST>", npu_uuid="<REDACTED_DEVICE_UUID_1>", npu_index="1", model="ATOM-Plus", sid="<REDACTED_SERIAL_0>", location="5"} 1
+# HELP all_smi_rebellions_device_info Rebellions device information
+# TYPE all_smi_rebellions_device_info gauge
+all_smi_rebellions_device_info{npu="RBLN-CA22", instance="<REDACTED_HOST>", npu_uuid="<REDACTED_DEVICE_UUID_2>", npu_index="2", model="ATOM-Plus", sid="<REDACTED_SERIAL_1>", location="5"} 1
+# HELP all_smi_cpu_utilization CPU utilization percentage
+# TYPE all_smi_cpu_utilization gauge
+all_smi_cpu_utilization{cpu_model="Intel(R) Xeon(R) w7-3455", instance="<REDACTED_HOST>", hostname="<REDACTED_HOST>", index="0"} 0.22522522509098053
+# HELP all_smi_memory_used_bytes Used system memory in bytes
+# TYPE all_smi_memory_used_bytes gauge
+all_smi_memory_used_bytes{instance="<REDACTED_HOST>", hostname="<REDACTED_HOST>", index="0"} 16566497280
