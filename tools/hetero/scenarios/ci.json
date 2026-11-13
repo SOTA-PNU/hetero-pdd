@@ -1,0 +1,144 @@
+{
+  "sweep_name": "ci",
+  "scenarios": [
+    {
+      "name": "s1_b0",
+      "pair_id": "s1",
+      "system": "B0",
+      "comparison": "capacity",
+      "configuration": "baseline",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 1024,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 32,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i512_o128",
+          "input_tokens": 512,
+          "output_tokens": 128,
+          "requests": 176,
+          "seed": 20260924,
+          "warmup": 1,
+          "slots": {
+            "gpu": 1,
+            "npu0": 1,
+            "npu1": 1
+          }
+        }
+      ],
+      "estimation": {
+        "i512_o128": {
+          "reference": "s1_b0",
+          "reference_seconds_per_request": 0.2337212280059854,
+          "prefill_fraction": 0.07695572721839784,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.2337212280059854,
+          "expected_seconds": 41.13493612905343,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 41.13493612905343,
+          "uncapped_requests": 161,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s1_pdd",
+      "pair_id": "s1",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "monitor",
+      "model": "qwen3-0.6b",
+      "service_args": {
+        "dtype": "float16",
+        "kv_cache_dtype": "float16",
+        "max_model_len": 1024,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 32,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i512_o128",
+          "input_tokens": 512,
+          "output_tokens": 128,
+          "requests": 176,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 2
+        }
+      ],
+      "estimation": {
+        "i512_o128": {
+          "reference": "s1_pdd",
+          "reference_seconds_per_request": 0.8307576621882617,
+          "prefill_fraction": 0.03187837470995157,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 0.8307576621882617,
+          "expected_seconds": 146.21334854513407,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 146.21334854513407,
+          "uncapped_requests": 161,
+          "capped_at_512": false
+        }
+      }
+    },
+    {
+      "name": "s8_pdd",
+      "pair_id": "s8",
+      "system": "PDD",
+      "comparison": "capacity",
+      "configuration": "pdd",
+      "mode": "trace",
+      "model": "qwen25-3b",
+      "service_args": {
+        "dtype": "bfloat16",
+        "kv_cache_dtype": "bfloat16",
+        "max_model_len": 4352,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 128,
+        "block_size": 128,
+        "num_blocks": 160,
+        "layout_reorder": 0
+      },
+      "workloads": [
+        {
+          "name": "i4096_o256",
+          "input_tokens": 4096,
+          "output_tokens": 256,
+          "requests": 16,
+          "seed": 20260924,
+          "warmup": 1,
+          "concurrency": 8
+        }
+      ],
+      "estimation": {
+        "i4096_o256": {
+          "reference": "s2_pdd",
+          "reference_seconds_per_request": 4.099896886153147,
+          "prefill_fraction": 0.01363559652019422,
+          "formula": "reference seconds/request * weighted input/output scaling * batch/concurrency scaling",
+          "assumption": "Stage/length and batch scaling are estimates, not measured durations.",
+          "seconds_per_request": 4.099896886153147,
+          "expected_seconds": 65.59835017845035,
+          "requested_minimum_seconds": 30,
+          "output_rate_only_seconds": 65.59835017845035,
+          "uncapped_requests": 16,
+          "capped_at_512": false
+        }
+      }
+    }
+  ]
+}

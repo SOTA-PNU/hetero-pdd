@@ -1,0 +1,134 @@
+# 저장소 변수: CUDA_PY, RBLN_PY, ALLSMI_BIN, OTELCOL_BIN, PERFETTO_TP_BIN,
+# PROFILE_RESULT_ROOT, PROFILE_CACHE_ROOT, MODEL_QWEN3_06B, MODEL_QWEN25_3B.
+# 전체 initial.json 실행 시 MODEL_QWEN3_4B도 필요합니다.
+# 이론값(선택): NPU_MEM_BW_GBPS, NPU_PCIE_GEN, NPU_PCIE_WIDTH.
+# 러너: 드라이버와 CUDA/RBLN venv, 모델을 준비하고 install_offline.sh로
+# 도구를 러너 계정이 읽고 실행할 수 있는 위치에 설치합니다. 결과·캐시 폴더는
+# 저장소 밖에 두고 쓰기 권한을 부여합니다. 모든 job은 동일 장치와 파일시스템을
+# 공유하는 self-hosted 러너에서 실행해야 합니다(해당 러너 한 대만 등록).
+# Actions > PDD Profile > Run workflow에서 시나리오와 PER-001 여부를 선택합니다.
+# pdd_test.yml은 수정하지 않으며 같은 pdd-test concurrency 그룹을 사용합니다.
+name: PDD Profile
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: Scenario file
+        type: choice
+        options:
+          - tools/hetero/scenarios/ci.json
+          - tools/hetero/scenarios/initial.json
+        default: tools/hetero/scenarios/ci.json
+      per001:
+        description: Run PER-001 (S2 PDD)
+        type: boolean
+        default: false
+concurrency:
+  group: pdd-test
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  CUDA_PY: ${{ vars.CUDA_PY }}
+  RBLN_PY: ${{ vars.RBLN_PY }}
+  ALLSMI_BIN: ${{ vars.ALLSMI_BIN }}
+  OTELCOL_BIN: ${{ vars.OTELCOL_BIN }}
+  PERFETTO_TP_BIN: ${{ vars.PERFETTO_TP_BIN }}
+  NPU_MEM_BW_GBPS: ${{ vars.NPU_MEM_BW_GBPS }}
+  NPU_PCIE_GEN: ${{ vars.NPU_PCIE_GEN }}
+  NPU_PCIE_WIDTH: ${{ vars.NPU_PCIE_WIDTH }}
+  PROFILE_CACHE_ROOT: ${{ vars.PROFILE_CACHE_ROOT }}
+  MODEL_QWEN3_06B: ${{ vars.MODEL_QWEN3_06B }}
+  MODEL_QWEN25_3B: ${{ vars.MODEL_QWEN25_3B }}
+  MODEL_QWEN3_4B: ${{ vars.MODEL_QWEN3_4B }}
+  PROFILE_SCENARIOS: ${{ inputs.scenarios }}
+jobs:
+  prepare:
+    runs-on: self-hosted
+    outputs:
+      result_dir: ${{ steps.result.outputs.result_dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: result
+        env:
+          PROFILE_RESULT_ROOT: ${{ vars.PROFILE_RESULT_ROOT }}
+        run: |
+          RESULT_DIR="${PROFILE_RESULT_ROOT:?Set PROFILE_RESULT_ROOT}/profile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$RESULT_DIR"
+          echo "result_dir=$RESULT_DIR" >> "$GITHUB_OUTPUT"
+  profile:
+    needs: prepare
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare.outputs.result_dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run sweep and finalize
+        run: |
+          unset RUNNER_TRACKING_ID
+          models=(--model "qwen3-0.6b=${MODEL_QWEN3_06B:?Set MODEL_QWEN3_06B}" --model "qwen25-3b=${MODEL_QWEN25_3B:?Set MODEL_QWEN25_3B}")
+          if [ -n "$MODEL_QWEN3_4B" ]; then models+=(--model "qwen3-4b=$MODEL_QWEN3_4B"); fi
+          ./profile_sweep.sh --scenarios "$PROFILE_SCENARIOS" --sweep-dir "$RESULT_DIR/sweep" \
+            --cache-root "${PROFILE_CACHE_ROOT:?Set PROFILE_CACHE_ROOT}" "${models[@]}"
+  per001:
+    needs: [prepare, profile]
+    if: ${{ inputs.per001 && needs.profile.result == 'success' }}
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare.outputs.result_dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run PER-001 with S2 PDD conditions
+        run: |
+          unset RUNNER_TRACKING_ID
+          "$CUDA_PY" - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          from tools.hetero.profiler.run import flags
+          from tools.hetero.profiler.sweep import cache_key
+          spec = json.loads(Path('tools/hetero/scenarios/initial.json').read_text())
+          scenario = next(s for s in spec['scenarios'] if s['name'] == 's2_pdd')
+          root = Path(os.environ['RESULT_DIR'])
+          work = root / 'per001-workload.json'
+          work.write_text(json.dumps(scenario['workloads']))
+          options = dict(scenario['service_args'], configuration='pdd',
+                         model_path=os.environ['MODEL_QWEN25_3B'], model_name=scenario['model'],
+                         run_dir=root / 'per001', workload=work,
+                         cache_dir=Path(os.environ['PROFILE_CACHE_ROOT']) / cache_key(scenario))
+          subprocess.run(['./profile_overhead.sh', *flags(**options)], check=True)
+          PY
+  summarize:
+    needs: [prepare, profile, per001]
+    if: ${{ always() && needs.prepare.outputs.result_dir != '' }}
+    runs-on: self-hosted
+    env:
+      RESULT_DIR: ${{ needs.prepare.outputs.result_dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Summarize stored results
+        run: |
+          args=(--sweep-dir "$RESULT_DIR/sweep")
+          if [ '${{ inputs.per001 }}' = true ]; then args+=(--overhead-dir "$RESULT_DIR/per001/overhead"); fi
+          ./profile_summary.sh "${args[@]}"
+          cat "$RESULT_DIR/sweep/summary.md" >> "$GITHUB_STEP_SUMMARY"
+  upload:
+    needs: [prepare, summarize]
+    if: ${{ always() && needs.prepare.outputs.result_dir != '' }}
+    runs-on: self-hosted
+    steps:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: profile-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ needs.prepare.outputs.result_dir }}/sweep/summary.md
+            ${{ needs.prepare.outputs.result_dir }}/sweep/results.csv
+            ${{ needs.prepare.outputs.result_dir }}/sweep/comparison.csv
+            ${{ needs.prepare.outputs.result_dir }}/sweep/runs/**/profile/summary.json
+            ${{ needs.prepare.outputs.result_dir }}/per001/overhead/overhead.json
+            ${{ needs.prepare.outputs.result_dir }}/per001/overhead/overhead.md
