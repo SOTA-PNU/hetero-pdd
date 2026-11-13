@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import atexit
 import json
 import os
+import threading
 import time
 from collections import defaultdict
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass, field
 from typing import TypeVar
 
@@ -27,6 +29,105 @@ from vllm_rbln.logger import init_logger
 
 logger = init_logger(__name__)
 T = TypeVar("T", int, float)
+EVENTS_ENABLED = bool(envs.VLLM_RBLN_METRICS and envs.VLLM_RBLN_METRICS_DIR)
+_event_log = None
+_copy_stats = threading.local()
+
+
+class _EventLog:
+    def __init__(self, directory: str, rank: str) -> None:
+        self.file = None
+        self._files = ExitStack()
+        self.rank = rank or "0"
+        self.disabled = False
+        self.count = 0
+        self.last_flush_ns = 0
+        try:
+            os.makedirs(directory, exist_ok=True)
+            suffix = self.rank.replace(" ", "_").lower()
+            with ExitStack() as stack:
+                self.file = stack.enter_context(
+                    open(
+                        os.path.join(directory, f"events_{suffix}.jsonl"),
+                        "a",
+                        encoding="utf-8",
+                    )
+                )
+                self._files = stack.pop_all()
+            self.write(
+                "clock_anchor", time_ns=time.time_ns(), monotonic_ns=time.monotonic_ns()
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self.disable(exc)
+        atexit.register(self.close)
+
+    def disable(self, exc: Exception) -> None:
+        global EVENTS_ENABLED
+        if self.disabled:
+            return
+        self.disabled = True
+        EVENTS_ENABLED = False
+        logger.warning("RBLN event logging disabled: %s", exc)
+        self.close()
+
+    def write(self, kind: str, **fields) -> None:
+        if self.disabled or self.file is None:
+            return
+        try:
+            self.file.write(
+                json.dumps({"kind": kind, "rank": self.rank, **fields}) + "\n"
+            )
+            self.count += 1
+            now = time.monotonic_ns()
+            if (
+                self.count >= 256
+                or kind in ("kv_layout", "clock_anchor")
+                or now - self.last_flush_ns >= 1_000_000_000
+            ):
+                self.file.flush()
+                self.count = 0
+                self.last_flush_ns = now
+        except (OSError, TypeError, ValueError) as exc:
+            self.disable(exc)
+
+    def close(self) -> None:
+        if self.file is not None:
+            self.file = None
+            try:
+                self._files.close()  # TextIO.close flushes the final partial batch.
+            except (OSError, TypeError, ValueError) as exc:
+                self.disable(exc)
+
+
+def disable_events(exc: Exception) -> None:
+    if _event_log is not None:
+        _event_log.disable(exc)
+
+
+def record_event(kind: str, **fields) -> None:
+    if not EVENTS_ENABLED or _event_log is None:
+        return
+    try:
+        if "monotonic_ns" not in fields:
+            fields["monotonic_ns"] = time.monotonic_ns()
+        _event_log.write(kind, **fields)
+    except (OSError, TypeError, ValueError) as exc:
+        disable_events(exc)
+
+
+def reset_copy_stats() -> None:
+    _copy_stats.totals = (0, 0, 0)
+
+
+def add_copy_stats(h2d_ns: int, reorder_ns: int, num_blocks: int) -> None:
+    h2d, reorder, blocks = getattr(_copy_stats, "totals", (0, 0, 0))
+    _copy_stats.totals = (h2d + h2d_ns, reorder + reorder_ns, blocks + num_blocks)
+
+
+def take_copy_stats() -> tuple[int, int, int]:
+    totals = getattr(_copy_stats, "totals", (0, 0, 0))
+    reset_copy_stats()
+    return totals
 
 
 @dataclass
@@ -98,6 +199,10 @@ class _Sample:
     ccl: int | None = None
     prepare: int | None = None
     phase: bool | None = None  # True=prefill, False=decode (set by the model span)
+    start_mono_ns: int | None = None
+    end_mono_ns: int | None = None
+    active_requests: int | None = None
+    context_len_sum: int | None = None
 
     def merged(self, other: "_Sample") -> "_Sample":
         def _add(a: int | None, b: int | None) -> int | None:
@@ -110,6 +215,10 @@ class _Sample:
             ccl=_add(self.ccl, other.ccl),
             prepare=_add(self.prepare, other.prepare),
             phase=self.phase,  # keep the model step's phase
+            start_mono_ns=self.start_mono_ns,
+            end_mono_ns=other.end_mono_ns,
+            active_requests=self.active_requests,
+            context_len_sum=self.context_len_sum,
         )
 
 
@@ -122,16 +231,34 @@ except ImportError:
 
 
 class _TimingSpan:
-    __slots__ = ("_ctx", "_phase", "_is_sampler", "_reports", "_start", "_capture_ctx")
+    __slots__ = (
+        "_ctx",
+        "_phase",
+        "_is_sampler",
+        "_reports",
+        "_start",
+        "_capture_ctx",
+        "_start_mono_ns",
+        "_active_requests",
+        "_context_len_sum",
+    )
 
     def __init__(
-        self, ctx: "_PerformanceContext", phase: bool | None, is_sampler: bool
+        self,
+        ctx: "_PerformanceContext",
+        phase: bool | None,
+        is_sampler: bool,
+        active_requests: int | None = None,
+        context_len_sum: int | None = None,
     ) -> None:
         self._ctx = ctx
         self._phase = phase
         self._is_sampler = is_sampler
         self._reports: list[dict] | None = None
         self._start = 0.0
+        self._start_mono_ns: int | None = None
+        self._active_requests = active_requests
+        self._context_len_sum = context_len_sum
 
     def __enter__(self) -> "_TimingSpan":
         # Create capture_ctx on each __enter__ call: contextmanager-based objects
@@ -140,6 +267,8 @@ class _TimingSpan:
             rebel.capture_reports() if _REBEL_HAS_CAPTURE else nullcontext()
         )
         self._reports = self._capture_ctx.__enter__()
+        if EVENTS_ENABLED:
+            self._start_mono_ns = time.monotonic_ns()
         self._start = time.perf_counter()
         return self
 
@@ -147,11 +276,23 @@ class _TimingSpan:
         # Record time before closing capture_ctx to exclude any internal
         # synchronization overhead inside rebel from the measured latency.
         end = time.perf_counter()
+        end_mono_ns = time.monotonic_ns() if EVENTS_ENABLED else None
         latency = end - self._start
         self._capture_ctx.__exit__(*args)
         host, device, ccl, prepare = _parse_reports(self._reports)
         self._ctx._submit(
-            _Sample(latency, host, device, ccl, prepare, self._phase),
+            _Sample(
+                latency,
+                host,
+                device,
+                ccl,
+                prepare,
+                self._phase,
+                self._start_mono_ns,
+                end_mono_ns,
+                self._active_requests,
+                self._context_len_sum,
+            ),
             self._is_sampler,
             self._start,
             end,
@@ -171,18 +312,41 @@ class _NoopSpan:
 
 class _PerformanceContext:
     def __init__(self, name: str | None = None) -> None:
+        global _event_log
         self.name = name
         self.rank_tag = _rank_tag()
         self._metrics: dict[bool, Metrics] = defaultdict(Metrics)
         self._pending: _Sample | None = None
         self._e2e_start: float | None = None
         self._e2e: dict[bool, Metrics] = defaultdict(Metrics)
+        if EVENTS_ENABLED and _event_log is None:
+            _event_log = _EventLog(envs.VLLM_RBLN_METRICS_DIR, self.rank_tag)
 
-    def profile_model(self, is_prefill: bool) -> _TimingSpan:
+    def profile_model(
+        self,
+        is_prefill: bool,
+        *,
+        active_requests: int | None = None,
+        context_lengths=None,
+    ) -> _TimingSpan:
         # A prior model step with no sampler (intermediate chunked prefill,
         # non-last PP rank) leaves a pending report; record it model-only here.
         self._flush_pending()
-        return _TimingSpan(self, phase=is_prefill, is_sampler=False)
+        context_len_sum = None
+        if EVENTS_ENABLED and context_lengths is not None:
+            try:
+                # Runner seq_lens is CPU-resident: computed + scheduled tokens.
+                # TODO(verify: H4): Check this context convention with device steps.
+                context_len_sum = int(context_lengths[:active_requests].sum())
+            except Exception as exc:
+                disable_events(exc)
+        return _TimingSpan(
+            self,
+            phase=is_prefill,
+            is_sampler=False,
+            active_requests=active_requests,
+            context_len_sum=context_len_sum,
+        )
 
     def profile_sampler(self) -> _TimingSpan:
         return _TimingSpan(self, phase=None, is_sampler=True)
@@ -212,6 +376,25 @@ class _PerformanceContext:
         self._metrics[bool(s.phase)].record(
             s.latency, s.host, s.device, s.ccl, s.prepare
         )
+        if EVENTS_ENABLED:
+            fields = {}
+            if s.active_requests is not None:
+                fields = dict(
+                    active_requests=s.active_requests, context_len_sum=s.context_len_sum
+                )
+            record_event(
+                "step",
+                monotonic_ns=s.end_mono_ns,
+                phase="prefill" if s.phase else "decode",
+                exec_s=s.latency,
+                span_start_ns=s.start_mono_ns,
+                span_end_ns=s.end_mono_ns,
+                host=s.host,
+                device=s.device,
+                ccl=s.ccl,
+                prepare=s.prepare,
+                **fields,
+            )
 
     def print_stats(self) -> None:
         self._flush_pending()  # record the final step if it had no sampler
@@ -223,6 +406,10 @@ class _PerformanceContext:
         name = f"{self.name} | {self.rank_tag}" if self.rank_tag else self.name
         _report_metrics(name, sections)
         _write_metrics_json(self.name, self.rank_tag, sections)
+        if EVENTS_ENABLED:
+            record_event(
+                "clock_anchor", time_ns=time.time_ns(), monotonic_ns=time.monotonic_ns()
+            )
 
 
 class _NoopPerformanceContext:

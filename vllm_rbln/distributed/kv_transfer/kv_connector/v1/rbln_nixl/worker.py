@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -34,6 +35,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.nixl import (
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.nixl.metadata import (
     NixlHandshakePayload,
+    ReqMeta,
     compute_nixl_compatibility_hash,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.nixl.tp_mapping import (
@@ -47,6 +49,7 @@ from vllm.v1.kv_cache_interface import (
 
 import vllm_rbln.envs as envs
 from vllm_rbln.logger import init_logger
+from vllm_rbln.v1.worker import metrics_v2
 
 if TYPE_CHECKING:
     from vllm.v1.kv_cache_interface import KVCacheConfig
@@ -155,6 +158,49 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
                     self._sw_ratio,
                 )
 
+    # Match PerformanceContext's import-time gate: disabled workers inherit the
+    # upstream methods directly, without an extra per-request wrapper or timer.
+    if metrics_v2.EVENTS_ENABLED:
+
+        def _read_blocks_for_req(self, req_id: str, meta: ReqMeta):
+            if metrics_v2.EVENTS_ENABLED:
+                try:
+                    metrics_v2.record_event("kv_xfer_start", req_id=req_id)
+                except Exception as exc:
+                    metrics_v2.disable_events(exc)
+            return super()._read_blocks_for_req(req_id, meta)
+
+        def sync_recved_kv_to_device(self, req_id: str, meta: ReqMeta):
+            start_ns = None
+            if metrics_v2.EVENTS_ENABLED:
+                try:
+                    metrics_v2.record_event("kv_xfer_done", req_id=req_id)
+                    metrics_v2.reset_copy_stats()
+                    start_ns = time.monotonic_ns()
+                except Exception as exc:
+                    metrics_v2.disable_events(exc)
+            # vLLM 0.22.0 calls copy_blocks inline for each group on this thread.
+            # Never catch engine exceptions or change the upstream return value.
+            result = super().sync_recved_kv_to_device(req_id, meta)
+            if metrics_v2.EVENTS_ENABLED and start_ns is not None:
+                try:
+                    end_ns = time.monotonic_ns()
+                    h2d_ns, reorder_ns, num_blocks = metrics_v2.take_copy_stats()
+                    metrics_v2.record_event(
+                        "kv_h2d",
+                        req_id=req_id,
+                        monotonic_ns=end_ns,
+                        start_ns=start_ns,
+                        end_ns=end_ns,
+                        h2d_ns=h2d_ns,
+                        reorder_ns=reorder_ns,
+                        num_blocks=num_blocks,
+                        bytes_est=num_blocks * self._metrics_block_bytes,
+                    )
+                except Exception as exc:
+                    metrics_v2.disable_events(exc)
+            return result
+
     def register_kv_caches(self, kv_caches: dict[str, torch.Tensor]) -> None:
         """Wire KV caches into NIXL.
 
@@ -168,6 +214,28 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
         fall straight through to upstream's UCX-backed registration —
         the host xfer buffers are plain DRAM in either case.
         """
+        if metrics_v2.EVENTS_ENABLED and not getattr(self, "_metrics_layout", False):
+            try:
+                # One block count per group, across all copied pool tensors/K/V.
+                # TODO(verify: H4): Check physical block IDs, group count and
+                # pool byte sizes against live meta.local_physical_block_ids.
+                total_bytes = sum(
+                    c.numel() * c.element_size() for c in kv_caches.values()
+                )
+                self._metrics_block_bytes, remainder = divmod(
+                    total_bytes, self.num_blocks
+                )
+                if remainder:
+                    raise ValueError("KV cache bytes are not divisible by num_blocks")
+                metrics_v2.record_event(
+                    "kv_layout",
+                    block_bytes=self._metrics_block_bytes,
+                    use_host_buffer=self.use_host_buffer,
+                    kv_buffer_device=self.kv_buffer_device,
+                )
+                self._metrics_layout = True
+            except Exception as exc:
+                metrics_v2.disable_events(exc)
         if self.kv_buffer_device == "rbln":
             self._pending_kv_caches = kv_caches
             logger.info(
