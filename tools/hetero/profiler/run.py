@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Run one service session and its workloads; see docs/hetero/profiler.md."""
+"""Run one service session and its workloads."""
 
 import argparse
 import gzip
@@ -339,9 +339,15 @@ def parse_args(argv=None, *, single=False):
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         description="Measure PER-001 monitor overhead." if single else __doc__,
-        epilog="Append service arguments after the measurement options."
-        if single
-        else None,
+        epilog=(
+            "Append service arguments: --model-path PATH --model-name NAME. "
+            "Set CUDA_PY and RBLN_PY, or pass --cuda-python and --rbln-python. "
+            "Monitoring tools must be on PATH or set ALLSMI_BIN; trace/deep also "
+            "need OTELCOL_BIN, and deep needs PERFETTO_TP_BIN. "
+            "Use an empty --run-dir outside the repository; service files go in "
+            "service/ and workload results in <workload>/ under that directory. "
+            + ("PER-001 reports go in overhead/." if single else "")
+        ),
         allow_abbrev=False,
     )
     parser.add_argument("--configuration", choices=("baseline", "pdd"), required=True)
