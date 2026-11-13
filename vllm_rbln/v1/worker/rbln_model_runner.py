@@ -14,6 +14,7 @@
 
 import dataclasses
 import os
+import time
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from contextlib import nullcontext
@@ -125,6 +126,7 @@ from vllm_rbln.v1.core.rbln_scheduler import RBLNSchedulerOutput
 from vllm_rbln.v1.sample.rbln_rejection_sampler import RBLNRejectionSampler
 from vllm_rbln.v1.spec_decode.eagle import RBLNEagleProposer
 from vllm_rbln.v1.spec_decode.medusa import RBLNMedusaProposer
+from vllm_rbln.v1.worker import metrics_v2
 from vllm_rbln.v1.worker.bucketing import get_bucketing_manager
 from vllm_rbln.v1.worker.input_stager import InputLayout, InputStager, StagedModelInputs
 from vllm_rbln.v1.worker.metrics_v2 import PerformanceContext
@@ -1437,7 +1439,15 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                 scheduler_output,
                 defer_finalize=defer_kv_connector_finalize,
             ) as kv_connector_output,
-            self.performance_ctx.profile_model(self.is_prefill),
+            (
+                self.performance_ctx.profile_model(
+                    self.is_prefill,
+                    active_requests=num_reqs,
+                    context_lengths=self.seq_lens,
+                )
+                if metrics_v2.EVENTS_ENABLED
+                else self.performance_ctx.profile_model(self.is_prefill)
+            ),
         ):
             model_output = self.model_executable(
                 **staged_model_inputs.as_kwargs(),
@@ -2655,6 +2665,7 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                 os.environ.get("VLLM_RBLN_PDD_LAYOUT_REORDER", "0") == "1"
             )
 
+            # Keep copy behavior in sync with profiled_copy_kv_blocks below.
             def rbln_copy_kv_blocks(
                 src_kv_caches: dict[str, torch.Tensor],
                 dst_kv_caches: dict[str, torch.Tensor],
@@ -2715,7 +2726,94 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                             else:
                                 dst_block.copy_(src_block)
 
-            kv_transfer_group.set_host_xfer_buffer_ops(rbln_copy_kv_blocks)
+            if metrics_v2.EVENTS_ENABLED:
+
+                def profiled_copy_kv_blocks(
+                    src_kv_caches: dict[str, torch.Tensor],
+                    dst_kv_caches: dict[str, torch.Tensor],
+                    src_block_ids: list[int],
+                    dst_block_ids: list[int],
+                    direction: Literal["h2d", "d2h"],
+                ) -> None:
+                    """Instrumented duplicate of rbln_copy_kv_blocks.
+
+                    Update both functions together when changing copy behavior.
+                    """
+                    if direction != "h2d" or not metrics_v2.EVENTS_ENABLED:
+                        return rbln_copy_kv_blocks(
+                            src_kv_caches,
+                            dst_kv_caches,
+                            src_block_ids,
+                            dst_block_ids,
+                            direction,
+                        )
+                    h2d_ns = reorder_ns = 0
+                    if (
+                        not src_kv_caches
+                        or not dst_kv_caches
+                        or not src_block_ids
+                        or not dst_block_ids
+                    ):
+                        return
+                    assert src_block_ids == dst_block_ids, (
+                        "src_block_ids and dst_block_ids must be the same: "
+                        f"src_block_ids={src_block_ids} dst_block_ids={dst_block_ids}"
+                    )
+                    reorder_this_copy = layout_reorder_enabled and direction == "h2d"
+                    # P/D uses identical block ids on both sides (asserted above), so
+                    # the copy indexes by src_block_ids. The opt-in layout correction
+                    # is limited to H2D; the control path remains symmetric.
+                    for layer_name, dst_cache in dst_kv_caches.items():
+                        src_cache = src_kv_caches[layer_name]
+                        if reorder_this_copy:
+                            assert src_cache.shape[0] == dst_cache.shape[0] == 2
+                        for kv in range(dst_cache.shape[0]):
+                            dst_kv = dst_cache[kv]
+                            src_kv = src_cache[kv]
+                            for idx in src_block_ids:
+                                src_block = src_kv[idx]
+                                dst_block = dst_kv[idx]
+                                if reorder_this_copy:
+                                    assert src_block.is_contiguous()
+                                    assert src_block.dtype == dst_block.dtype
+                                    assert (
+                                        src_block.element_size()
+                                        == dst_block.element_size()
+                                        == 2
+                                    )
+                                    assert src_block.numel() == dst_block.numel()
+                                    assert src_block.ndim == dst_block.ndim == 4
+                                    h, singleton, t, d = dst_block.shape
+                                    assert singleton == 1
+                                    source_view = src_block.view(-1).view(t, h, d)
+                                    reorder_start = time.monotonic_ns()
+                                    corrected = (
+                                        source_view.permute(1, 0, 2)
+                                        .unsqueeze(1)
+                                        .contiguous()
+                                    )
+                                    reorder_ns += time.monotonic_ns() - reorder_start
+                                    assert corrected.shape == dst_block.shape
+                                    assert corrected.dtype == dst_block.dtype
+                                    copy_start = time.monotonic_ns()
+                                    dst_block.copy_(corrected)
+                                    h2d_ns += time.monotonic_ns() - copy_start
+                                else:
+                                    copy_start = time.monotonic_ns()
+                                    dst_block.copy_(src_block)
+                                    h2d_ns += time.monotonic_ns() - copy_start
+                    # TODO(verify: H4): copy_ may report host-call time, not completed
+                    # DMA time. Do not synchronize to change the execution path.
+                    try:
+                        metrics_v2.add_copy_stats(
+                            h2d_ns, reorder_ns, len(src_block_ids)
+                        )
+                    except Exception as exc:
+                        metrics_v2.disable_events(exc)
+
+                kv_transfer_group.set_host_xfer_buffer_ops(profiled_copy_kv_blocks)
+            else:
+                kv_transfer_group.set_host_xfer_buffer_ops(rbln_copy_kv_blocks)
 
         self.cache_config.num_gpu_blocks = kv_cache_config.num_blocks
         self.cache_config.num_cpu_blocks = 0
