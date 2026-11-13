@@ -1,0 +1,8 @@
+{
+  "configuration": "baseline",
+  "endpoints": {
+    "gpu": "http://gpu:8000",
+    "npu0": "http://npu0:8000",
+    "npu1": "http://npu1:8000"
+  }
+}

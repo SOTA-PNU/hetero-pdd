@@ -1,0 +1,27 @@
+{
+  "generation": {
+    "ignore_eos": true,
+    "temperature": 0,
+    "top_p": 1
+  },
+  "input_tokens": 512,
+  "model": "Qwen/Qwen3-0.6B",
+  "output_tokens": 128,
+  "prefix_reuse": "low_unique_prompts",
+  "requests": 18,
+  "seed": 20260924,
+  "slots": [
+    {
+      "base_url": "http://127.0.0.1:58615",
+      "index": 0,
+      "target": "pdd"
+    },
+    {
+      "base_url": "http://127.0.0.1:58615",
+      "index": 1,
+      "target": "pdd"
+    }
+  ],
+  "tokenizer": "<REDACTED_PATH>",
+  "warmup_per_endpoint": 1
+}

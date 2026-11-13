@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# fileexporter v0.163: one uncompressed OTLP JSON object per batch/line.
+# https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/v0.163.0/exporter/fileexporter
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:${env:OTLP_PORT}
+processors:
+  batch: {}
+exporters:
+  file:
+    path: ${env:OTEL_OUT}/traces.jsonl
+    format: json
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]

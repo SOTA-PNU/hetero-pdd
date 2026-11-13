@@ -1,0 +1,85 @@
+{
+  "expected_ids_by_role": {
+    "gpu": [
+      "b0_three_devices-seed7-req0000"
+    ],
+    "npu0": [
+      "b0_three_devices-seed7-req0001"
+    ],
+    "npu1": [
+      "b0_three_devices-seed7-req0002"
+    ]
+  },
+  "missing_ids": [],
+  "planned_count": 3,
+  "planned_ids": [
+    "b0_three_devices-seed7-req0000",
+    "b0_three_devices-seed7-req0001",
+    "b0_three_devices-seed7-req0002"
+  ],
+  "raw_count": 3,
+  "requests": {
+    "b0_three_devices-seed7-req0000": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    },
+    "b0_three_devices-seed7-req0001": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    },
+    "b0_three_devices-seed7-req0002": {
+      "chunk_itl_seconds": [
+        2,
+        2
+      ],
+      "client_send_delay_seconds": 2,
+      "e2e_seconds": 10,
+      "queue_wait_seconds": 1,
+      "second_token_delay_seconds": 2,
+      "service_seconds": 8,
+      "token_itl_seconds": [
+        2,
+        2
+      ],
+      "tp_ot_seconds": 2,
+      "ttft_seconds": 4
+    }
+  },
+  "run_status": "PASS",
+  "success_count": 3,
+  "summary": {
+    "actual_input_tokens_total": 6,
+    "actual_output_tokens_total": 9,
+    "completed_requests_per_second": 0.3,
+    "makespan_seconds": 10,
+    "output_tokens_per_second": 0.9
+  },
+  "undefined_metrics": {},
+  "unique_id_count": 3
+}
