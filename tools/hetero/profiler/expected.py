@@ -11,7 +11,11 @@ from tools.hetero.profiler.scrape import wait_until
 
 
 def service_config(run_dir):
-    return json.loads((Path(run_dir) / "service" / "config.json").read_text())
+    root = Path(run_dir)
+    path = root / "service.json"
+    return json.loads(
+        (path if path.exists() else root / "service/config.json").read_text()
+    )
 
 
 # H0 확인(2026-11-06). vLLM 0.22.0:

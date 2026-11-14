@@ -85,11 +85,13 @@ def mono(ns, anchors):
     return (ns - anchor["time_ns"] + anchor["monotonic_ns"]) / 1e9
 
 
-def phase_intervals(rows, ids, spans, events, anchors, trace):
+def phase_intervals(rows, ids, spans, events, anchors, trace, role_devices=None):
     phases = {d: {} for d in DEVICES}
 
     def add(role, phase, a, b):
-        phases[ROLE_DEVICE.get(role, role)].setdefault(phase, []).append((a, b))
+        phases[(role_devices or ROLE_DEVICE).get(role, role)].setdefault(
+            phase, []
+        ).append((a, b))
 
     for role, names in ids.items():
         for row in rows:
@@ -217,7 +219,7 @@ def phase_resources(series, phases, window, trace):
     return dict(samples=rows, device_phase_active_ratio=ratios)
 
 
-def energy_efficiency(power, window, tokens):
+def energy_efficiency(power, window, tokens, active_devices=DEVICES):
     result, valid = {}, []
     for device in (*DEVICES, "total"):
         coverage, reason = 0, "missing_device"
@@ -230,10 +232,12 @@ def energy_efficiency(power, window, tokens):
             if sum(v is not None for _, v in points) < 2:
                 reason = "insufficient_power_samples"
             energy = energy if coverage >= 0.8 and len(points) >= 2 else None
-            if energy is not None:
+            if energy is not None and device in active_devices:
                 valid.append((energy, coverage))
         else:
-            energy = sum(e for e, _ in valid) if len(valid) == 3 else None
+            energy = (
+                sum(e for e, _ in valid) if len(valid) == len(active_devices) else None
+            )
             coverage = min((c for _, c in valid), default=0)
         per_token = energy / tokens if energy is not None and tokens else None
         efficiency = tokens / energy if energy else None

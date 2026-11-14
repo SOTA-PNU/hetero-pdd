@@ -99,7 +99,7 @@ def transfer_metrics(config, rows, events, servers, links, window):
         width = int(pci.get("link_width") or os.environ.get("NPU_PCIE_WIDTH") or 0)
         specs[f"npu{d['npu']}"] = gen, width
     for role, data in servers.items():
-        device = resources.ROLE_DEVICE.get(role, role)
+        device = config.get("role_devices", resources.ROLE_DEVICE).get(role, role)
         gen, width = specs[device]
         link = {3: 0.985, 4: 1.969, 5: 3.938}.get(gen, 0) * width
         targets = (
