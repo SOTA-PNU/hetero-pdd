@@ -19,7 +19,7 @@ from tools.hetero.profiler.common import live_rows
 from tools.hetero.profiler.monitors import Monitors, wait_for_layout
 from tools.hetero.profiler.scrape import boundary_snapshot
 from tools.hetero.profiler.tools import capture_links, check_tools
-from tools.pdd.runner import atomic_json, proc_identity, read_env
+from tools.pdd.runner import atomic_json, execution_env, proc_identity, read_env
 
 
 def service(runtime):
@@ -123,11 +123,35 @@ def stop(manager, names):
         raise RuntimeError("; ".join(errors))
 
 
+def check_import_sources(paths, checkout):
+    for path in paths.values():
+        if not Path(path).resolve().is_relative_to(Path(checkout).resolve()):
+            raise RuntimeError(f"vllm_rbln이 체크아웃이 아닌 {path}에서 import됨")
+
+
+def verify_imports(root, runtime):
+    script = (
+        "import json, vllm_rbln, vllm_rbln.v1.worker.metrics_v2 as metrics; "
+        "print(json.dumps({'vllm_rbln': vllm_rbln.__file__, "
+        "'metrics_v2': metrics.__file__}))"
+    )
+    output = subprocess.check_output(
+        [runtime["RBLN_PY"], "-c", script],
+        env=execution_env(runtime),
+        cwd=runtime["REPO"],
+        text=True,
+    )
+    paths = json.loads(output.splitlines()[-1])
+    atomic_json(root / "import_sources.json", paths)
+    check_import_sources(paths, runtime["REPO"])
+
+
 def prepare(root, runtime, manager):
     mode = os.environ.get("PDD_PROFILE_MODE", "trace")
     if mode not in ("none", "monitor", "trace"):
         raise ValueError(f"unsupported PDD_PROFILE_MODE: {mode}")
     atomic_json(root / "run.json", dict(mode=mode, commit=runtime["COMMIT"]))
+    verify_imports(root, runtime)
     check_tools(mode)
     port = manager.collector() if mode == "trace" else None
     env, args = run.role_options("pdd", mode, root, port)

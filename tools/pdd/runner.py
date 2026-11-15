@@ -291,7 +291,12 @@ def execution_env(runtime):
             env[key] = runtime[f"ENV_{key}"]
     env.update({k: v for k, v in runtime.items() if not k.startswith("ENV_")})
     env["PDD_CONTROL_PY"] = sys.executable
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.update(
+        PYTHONNOUSERSITE="1",
+        PYTHONDONTWRITEBYTECODE="1",
+        PYTHONHASHSEED="0",
+        PYTHONPATH=runtime.get("REPO", str(REPO)),
+    )
     return env
 
 

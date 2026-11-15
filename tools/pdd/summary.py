@@ -649,6 +649,9 @@ def generate(
         sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
         from tools.hetero.profiler.pdd_summary import metrics
 
+        sources = result_dir / "profile/import_sources.json"
+        if sources.exists():
+            summary["configuration"].update(json.loads(sources.read_text()))
         path = result_dir / "profile/measure/profile/summary.json"
         data = json.loads(path.read_text()) if path.exists() else {}
         summary["profiler"] = data

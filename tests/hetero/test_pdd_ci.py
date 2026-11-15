@@ -79,6 +79,7 @@ class PDDIntegrationTests(unittest.TestCase):
         manager.collector.return_value = 4318
         with (
             patch.object(pdd_ci, "check_tools"),
+            patch.object(pdd_ci, "verify_imports"),
             patch.object(pdd_ci, "make_tokenizer") as tok,
         ):
             tok.return_value.encode.return_value = [1] * 327
@@ -185,3 +186,31 @@ class PDDIntegrationTests(unittest.TestCase):
                 self.assertEqual(
                     [r["request_id"] for r in server.requests], ["keep", "keep"]
                 )
+
+    def test_sources_and_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "checkout"
+            for paths, valid in (
+                (
+                    {
+                        "vllm_rbln": root / "vllm_rbln/__init__.py",
+                        "metrics_v2": root / "vllm_rbln/metrics_v2.py",
+                    },
+                    True,
+                ),
+                ({"metrics_v2": Path(tmp) / "editable/metrics_v2.py"}, False),
+            ):
+                with self.subTest(valid=valid):
+                    if valid:
+                        pdd_ci.check_import_sources(paths, root)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "체크아웃이 아닌"):
+                            pdd_ci.check_import_sources(paths, root)
+            env = runner.execution_env({"REPO": str(root)})
+            for key, value in dict(
+                PYTHONNOUSERSITE="1",
+                PYTHONDONTWRITEBYTECODE="1",
+                PYTHONHASHSEED="0",
+                PYTHONPATH=str(root),
+            ).items():
+                self.assertEqual(env[key], value)
