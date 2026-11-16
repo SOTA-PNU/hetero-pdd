@@ -365,8 +365,13 @@ RBLN_ENV+=(
 
 
 case "$1" in
-    PREFILL) exec "${CUDA_ENV[@]}" "${PREFILL_CMD[@]}" ;;
-    DECODE) exec "${RBLN_ENV[@]}" "${DECODE_CMD[@]}" ;;
+    PREFILL) exec "${CUDA_ENV[@]}" "${PREFILL_CMD[@]}" "${@:2}" ;;
+    DECODE)
+        if [[ -f "$RESULT_DIR/profile/server_options.json" ]]; then
+            RBLN_ENV+=(VLLM_RBLN_METRICS="${VLLM_RBLN_METRICS:-0}"
+                       VLLM_RBLN_METRICS_DIR="${VLLM_RBLN_METRICS_DIR:-}")
+        fi
+        exec "${RBLN_ENV[@]}" "${DECODE_CMD[@]}" "${@:2}" ;;
     PROXY) exec "${CUDA_ENV[@]}" "${PROXY_CMD[@]}" ;;
     *) echo "ERROR: invalid internal server role" >&2; exit 2 ;;
 esac

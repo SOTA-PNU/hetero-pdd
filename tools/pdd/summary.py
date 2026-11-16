@@ -27,32 +27,80 @@ from pathlib import Path
 from runner import atomic_text
 
 STEPS = (
-    "prepare_run", "start_prefill", "start_decode", "start_proxy",
-    "check_correctness", "warmup", "run_workload", "stop_pdd",
+    "prepare_run",
+    "start_prefill",
+    "start_decode",
+    "start_proxy",
+    "check_correctness",
+    "warmup",
+    "run_workload",
+    "stop_pdd",
     "summarize_results",
 )
 REQUIRED_STEPS = STEPS[:5]
 CONFIG_KEYS = (
-    "REPO", "BRANCH", "COMMIT", "CUDA_PY", "RBLN_PY",
-    "CUDA_VLLM_VERSION", "RBLN_VLLM_VERSION", "COMPILER_VERSION", "MODEL_PATH",
-    "MODEL_NAME", "MODEL_DTYPE", "KV_CACHE_DTYPE", "OFFLINE", "CUDA_DEVICE",
-    "CUDA_GPU_UUID", "CUDA_GPU_LINE", "RBLN_DEVICE", "PREFILL_PORT", "DECODE_PORT",
-    "PROXY_PORT", "PREFILL_SIDE_PORT", "DECODE_SIDE_PORT", "PREFILL_ENGINE_ID",
-    "DECODE_ENGINE_ID", "PRODUCER_CONFIG", "CONSUMER_CONFIG",
-    "VLLM_RBLN_PDD_LAYOUT_REORDER", "VLLM_KV_CACHE_LAYOUT", "UCX_NET_DEVICES",
-    "PRODUCER_KV_BUFFER_DEVICE", "CONSUMER_KV_BUFFER_DEVICE",
-    "PRODUCER_LOCAL_MEMORY_TYPE", "CONSUMER_LOCAL_MEMORY_TYPE",
-    "CONSUMER_REMOTE_MEMORY_TYPE", "TRANSFER_PATH", "PRODUCER_USE_HOST_BUFFER",
-    "PRODUCER_APPLICATION_D2H_EXPECTED", "PYTHON_BIT_TRANSFORM_EXPECTED",
-    "DTYPE_CAST_EXPECTED", "BLOCK_SIZE", "MAX_NUM_BATCHED_TOKENS",
-    "WARMUP_REQUESTS", "MEASURE_REQUESTS", "CONCURRENCY", "MAX_TOKENS", "PROMPT_MODE",
-    "MAX_MODEL_LEN", "MAX_NUM_SEQS", "TENSOR_PARALLEL_SIZE",
-    "NUM_GPU_BLOCKS_OVERRIDE", "SEED", "ENABLE_CHUNKED_PREFILL",
+    "REPO",
+    "BRANCH",
+    "COMMIT",
+    "CUDA_PY",
+    "RBLN_PY",
+    "CUDA_VLLM_VERSION",
+    "RBLN_VLLM_VERSION",
+    "COMPILER_VERSION",
+    "MODEL_PATH",
+    "MODEL_NAME",
+    "MODEL_DTYPE",
+    "KV_CACHE_DTYPE",
+    "OFFLINE",
+    "CUDA_DEVICE",
+    "CUDA_GPU_UUID",
+    "CUDA_GPU_LINE",
+    "RBLN_DEVICE",
+    "PREFILL_PORT",
+    "DECODE_PORT",
+    "PROXY_PORT",
+    "PREFILL_SIDE_PORT",
+    "DECODE_SIDE_PORT",
+    "PREFILL_ENGINE_ID",
+    "DECODE_ENGINE_ID",
+    "PRODUCER_CONFIG",
+    "CONSUMER_CONFIG",
+    "VLLM_RBLN_PDD_LAYOUT_REORDER",
+    "VLLM_KV_CACHE_LAYOUT",
+    "UCX_NET_DEVICES",
+    "PRODUCER_KV_BUFFER_DEVICE",
+    "CONSUMER_KV_BUFFER_DEVICE",
+    "PRODUCER_LOCAL_MEMORY_TYPE",
+    "CONSUMER_LOCAL_MEMORY_TYPE",
+    "CONSUMER_REMOTE_MEMORY_TYPE",
+    "TRANSFER_PATH",
+    "PRODUCER_USE_HOST_BUFFER",
+    "PRODUCER_APPLICATION_D2H_EXPECTED",
+    "PYTHON_BIT_TRANSFORM_EXPECTED",
+    "DTYPE_CAST_EXPECTED",
+    "BLOCK_SIZE",
+    "MAX_NUM_BATCHED_TOKENS",
+    "WARMUP_REQUESTS",
+    "MEASURE_REQUESTS",
+    "CONCURRENCY",
+    "MAX_TOKENS",
+    "PROMPT_MODE",
+    "MAX_MODEL_LEN",
+    "MAX_NUM_SEQS",
+    "TENSOR_PARALLEL_SIZE",
+    "NUM_GPU_BLOCKS_OVERRIDE",
+    "SEED",
+    "ENABLE_CHUNKED_PREFILL",
     "ENABLE_PREFIX_CACHING",
 )
 UNAVAILABLE_METRICS = (
-    "ttft_seconds", "itl_seconds", "pure_prefill_seconds", "pure_decode_seconds",
-    "kv_transfer_seconds", "layout_seconds", "operator_seconds",
+    "ttft_seconds",
+    "itl_seconds",
+    "pure_prefill_seconds",
+    "pure_decode_seconds",
+    "kv_transfer_seconds",
+    "layout_seconds",
+    "operator_seconds",
 )
 TIMING_DEFINITION = (
     "Step elapsed_seconds measures script execution using a monotonic clock, "
@@ -128,7 +176,10 @@ def read_rows(path: Path, phase: str, run_id: str, diagnostics: list) -> list[di
 
 
 def phase_summary(
-    result_dir: Path, name: str, runtime: dict, record: dict,
+    result_dir: Path,
+    name: str,
+    runtime: dict,
+    record: dict,
     diagnostics: list,
 ) -> dict:
     initial_errors = len(diagnostics)
@@ -176,15 +227,20 @@ def phase_summary(
         )
     if record.get("status") == "RUNNING":
         diagnostics.append(f"{name}: no completion record; the phase was interrupted")
-    known_tokens = [row["generated_token_count"] for row in rows
-                    if integer(row.get("generated_token_count"))]
+    known_tokens = [
+        row["generated_token_count"]
+        for row in rows
+        if integer(row.get("generated_token_count"))
+    ]
     total_tokens = sum(known_tokens) if known_tokens or status == "SUCCESS" else None
     successful_tokens = sum(row["generated_token_count"] for row in passed)
     latencies = sorted(row["latency_seconds"] for row in passed)
     complete_interval = (
         record.get("status") in ("SUCCESS", "FAILED")
-        and requested is not None and len(rows) == requested
-        and elapsed is not None and elapsed > 0
+        and requested is not None
+        and len(rows) == requested
+        and elapsed is not None
+        and elapsed > 0
         and len(diagnostics) == initial_errors
     )
     return {
@@ -201,16 +257,19 @@ def phase_summary(
         "successful_generated_token_total": successful_tokens,
         "tokens_per_second": (
             successful_tokens / elapsed
-            if name == "measure" and complete_interval else None
+            if name == "measure" and complete_interval
+            else None
         ),
         "latency_mean_seconds": statistics.mean(latencies) if latencies else None,
         "latency_p50_seconds": (
             latencies[max(0, math.ceil(0.50 * len(latencies)) - 1)]
-            if latencies else None
+            if latencies
+            else None
         ),
         "latency_p95_seconds": (
             latencies[max(0, math.ceil(0.95 * len(latencies)) - 1)]
-            if latencies else None
+            if latencies
+            else None
         ),
         "reason": record.get("reason"),
         "request_errors": [
@@ -232,58 +291,126 @@ def display(value: object) -> str:
 
 def render_markdown(summary: dict) -> str:
     lines = [
-        "# PDD execution summary", "",
+        "# PDD execution summary",
+        "",
         f"Experiment: **{summary['experiment_status']}**; "
         f"cleanup: **{summary['cleanup_status']}**.",
-        "Summary generation: SUCCESS. This does not imply experiment success.", "",
+        "Summary generation: SUCCESS. This does not imply experiment success.",
+        "",
         f"- Run ID: `{display(summary['run_id'])}`",
         f"- Commit: `{display(summary['commit'])}`",
-        f"- Result directory: `{display(summary['result_dir'])}`", "",
-        "## Script execution steps", "",
+        f"- Result directory: `{display(summary['result_dir'])}`",
+        "",
+        "## Script execution steps",
+        "",
         "| Step | Status | Seconds | Exit code | Failure reason | Log |",
         "| --- | --- | ---: | ---: | --- | --- |",
     ]
     for name, step in summary["steps"].items():
-        lines.append("| " + " | ".join(display(value) for value in (
-            name, step["status"], step.get("elapsed_seconds"),
-            step.get("exit_code"), step.get("reason"), step.get("log_path"),
-        )) + " |")
-    lines += ["", TIMING_DEFINITION, "", "## Observed requests", "",
-              "| Phase | Status | Requested | Completed | Succeeded | Failed | "
-              "Seconds | Observed tokens | Successful tokens | Tokens/s |",
-              "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
-    for name, phase in summary["phases"].items():
-        lines.append("| " + " | ".join(display(value) for value in (
-            name, phase["status"], phase["requested"], phase["completed"],
-            phase["succeeded"], phase["failed"], phase["elapsed_seconds"],
-            phase["generated_token_total"], phase["successful_generated_token_total"],
-            phase["tokens_per_second"],
-        )) + " |")
-    lines += ["", THROUGHPUT_DEFINITION, "", LATENCY_DEFINITION, "",
-              "| Phase | Mean latency (s) | p50 (s) | p95 (s) |",
-              "| --- | ---: | ---: | ---: |"]
-    for name, phase in summary["phases"].items():
-        lines.append("| " + " | ".join(display(value) for value in (
-            name, phase["latency_mean_seconds"], phase["latency_p50_seconds"],
-            phase["latency_p95_seconds"],
-        )) + " |")
-    lines += ["", "## Saved configuration", "", "| Setting | Value |",
-              "| --- | --- |"]
+        lines.append(
+            "| "
+            + " | ".join(
+                display(value)
+                for value in (
+                    name,
+                    step["status"],
+                    step.get("elapsed_seconds"),
+                    step.get("exit_code"),
+                    step.get("reason"),
+                    step.get("log_path"),
+                )
+            )
+            + " |"
+        )
+    if summary.get("profiler") is not None:
+        from tools.hetero.profiler.pdd_summary import observed
+
+        lines += observed(summary["profiler"])
+    else:
+        lines += [
+            "",
+            TIMING_DEFINITION,
+            "",
+            "## Observed requests",
+            "",
+            "| Phase | Status | Requested | Completed | Succeeded | Failed | "
+            "Seconds | Observed tokens | Successful tokens | Tokens/s |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+        for name, phase in summary["phases"].items():
+            lines.append(
+                "| "
+                + " | ".join(
+                    display(value)
+                    for value in (
+                        name,
+                        phase["status"],
+                        phase["requested"],
+                        phase["completed"],
+                        phase["succeeded"],
+                        phase["failed"],
+                        phase["elapsed_seconds"],
+                        phase["generated_token_total"],
+                        phase["successful_generated_token_total"],
+                        phase["tokens_per_second"],
+                    )
+                )
+                + " |"
+            )
+        lines += [
+            "",
+            THROUGHPUT_DEFINITION,
+            "",
+            LATENCY_DEFINITION,
+            "",
+            "| Phase | Mean latency (s) | p50 (s) | p95 (s) |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+        for name, phase in summary["phases"].items():
+            lines.append(
+                "| "
+                + " | ".join(
+                    display(value)
+                    for value in (
+                        name,
+                        phase["latency_mean_seconds"],
+                        phase["latency_p50_seconds"],
+                        phase["latency_p95_seconds"],
+                    )
+                )
+                + " |"
+            )
+    lines += ["", "## Saved configuration", "", "| Setting | Value |", "| --- | --- |"]
     for key, value in summary["configuration"].items():
         lines.append(f"| {display(key)} | {display(value)} |")
     for name, phase in summary["phases"].items():
         if phase["config"]:
-            lines += ["", f"Actual {name} request settings:", "", "```json",
-                      json.dumps(phase["config"], indent=2, sort_keys=True), "```"]
+            lines += [
+                "",
+                f"Actual {name} request settings:",
+                "",
+                "```json",
+                json.dumps(phase["config"], indent=2, sort_keys=True),
+                "```",
+            ]
     lines += ["", "## Uncollected metrics", ""]
-    lines += [f"- {metric}: unavailable (not collected)"
-              for metric in UNAVAILABLE_METRICS]
+    if summary.get("profiler") is not None:
+        from tools.hetero.profiler.pdd_summary import uncollected
+
+        lines += uncollected(summary["profiler"])
+    else:
+        lines += [
+            f"- {metric}: unavailable (not collected)" for metric in UNAVAILABLE_METRICS
+        ]
     lines += ["", "## Diagnostics", ""]
-    lines += ([f"- {display(item)}" for item in summary["diagnostics"]]
-              or ["No recorded diagnostics."])
+    lines += [f"- {display(item)}" for item in summary["diagnostics"]] or [
+        "No recorded diagnostics."
+    ]
     for name, phase in summary["phases"].items():
-        lines += [f"- {name} request {row['request_index']}: {display(row['error'])}"
-                  for row in phase["request_errors"]]
+        lines += [
+            f"- {name} request {row['request_index']}: {display(row['error'])}"
+            for row in phase["request_errors"]
+        ]
     lines += ["", "## Original artifacts", ""]
     lines += [f"- `{display(path)}`" for path in summary["artifacts"]]
     return "\n".join(lines) + "\n"
@@ -292,12 +419,31 @@ def render_markdown(summary: dict) -> str:
 def render_csv(summary: dict) -> str:
     output = io.StringIO(newline="")
     fields = (
-        "run_id", "commit", "experiment_status", "cleanup_status", "record_type",
-        "name", "status", "started_at", "ended_at", "elapsed_seconds", "exit_code",
-        "requested", "completed", "succeeded", "failed", "missing",
-        "generated_token_total", "successful_generated_token_total",
-        "tokens_per_second", "latency_mean_seconds", "latency_p50_seconds",
-        "latency_p95_seconds", "reason", "log_path", "value",
+        "run_id",
+        "commit",
+        "experiment_status",
+        "cleanup_status",
+        "record_type",
+        "name",
+        "status",
+        "started_at",
+        "ended_at",
+        "elapsed_seconds",
+        "exit_code",
+        "requested",
+        "completed",
+        "succeeded",
+        "failed",
+        "missing",
+        "generated_token_total",
+        "successful_generated_token_total",
+        "tokens_per_second",
+        "latency_mean_seconds",
+        "latency_p50_seconds",
+        "latency_p95_seconds",
+        "reason",
+        "log_path",
+        "value",
     )
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()
@@ -307,27 +453,47 @@ def render_csv(summary: dict) -> str:
             writer.writerow({**common, **row, "record_type": category, "name": name})
             if category == "phase":
                 for key, value in row["config"].items():
-                    writer.writerow({
-                        **common, "record_type": "request_config",
-                        "name": f"{name}.{key}", "value": value,
-                    })
+                    writer.writerow(
+                        {
+                            **common,
+                            "record_type": "request_config",
+                            "name": f"{name}.{key}",
+                            "value": value,
+                        }
+                    )
             else:
                 for index, attempt in enumerate(row.get("attempts", [])):
                     if isinstance(attempt, dict):
-                        writer.writerow({
-                            **common, **attempt, "record_type": "step_attempt",
-                            "name": f"{name}[{index}]",
-                        })
+                        writer.writerow(
+                            {
+                                **common,
+                                **attempt,
+                                "record_type": "step_attempt",
+                                "name": f"{name}[{index}]",
+                            }
+                        )
     for name, value in summary["configuration"].items():
-        writer.writerow({**common, "record_type": "configuration",
-                         "name": name, "value": value})
-    for name in UNAVAILABLE_METRICS:
-        writer.writerow({**common, "record_type": "uncollected_metric",
-                         "name": name, "value": "unavailable"})
-    for name in ("summary_status", "timing_definition", "throughput_definition",
-                 "latency_definition"):
-        writer.writerow({**common, "record_type": "summary",
-                         "name": name, "value": summary[name]})
+        writer.writerow(
+            {**common, "record_type": "configuration", "name": name, "value": value}
+        )
+    for name in summary["unavailable_metrics"]:
+        writer.writerow(
+            {
+                **common,
+                "record_type": "uncollected_metric",
+                "name": name,
+                "value": "unavailable",
+            }
+        )
+    for name in (
+        "summary_status",
+        "timing_definition",
+        "throughput_definition",
+        "latency_definition",
+    ):
+        writer.writerow(
+            {**common, "record_type": "summary", "name": name, "value": summary[name]}
+        )
     for diagnostic in summary["diagnostics"]:
         writer.writerow({**common, "record_type": "diagnostic", "reason": diagnostic})
     for path in summary["artifacts"]:
@@ -335,8 +501,9 @@ def render_csv(summary: dict) -> str:
     return output.getvalue()
 
 
-def generate(result_dir: Path | str, runtime: dict, stages: dict,
-             diagnostics: list | None = None) -> dict:
+def generate(
+    result_dir: Path | str, runtime: dict, stages: dict, diagnostics: list | None = None
+) -> dict:
     """Atomically write each summary, even for a failed or incomplete experiment.
 
     The caller holds the run lock. Exceptions writing the summaries must propagate
@@ -361,10 +528,15 @@ def generate(result_dir: Path | str, runtime: dict, stages: dict,
             diagnostics.append(f"{name}: invalid step record")
             step = {}
         steps[name] = {
-            "run_id": run_id, "status": "NOT_RUN", "started_at": None,
+            "run_id": run_id,
+            "status": "NOT_RUN",
+            "started_at": None,
             "ended_at": None,
-            "elapsed_seconds": None, "exit_code": None, "reason": None,
-            "log_path": None, **step,
+            "elapsed_seconds": None,
+            "exit_code": None,
+            "reason": None,
+            "log_path": None,
+            **step,
         }
         if not isinstance(steps[name].get("attempts", []), list):
             diagnostics.append(f"{name}: invalid attempt history")
@@ -398,23 +570,30 @@ def generate(result_dir: Path | str, runtime: dict, stages: dict,
             diagnostics.append(f"Cannot read {phase_path}: {exc}")
             phase_records = {}
     phases = {}
-    for name in ("warmup", "measure"):
+    profiled = (result_dir / "profile").exists()
+    for name in () if profiled else ("warmup", "measure"):
         record = phase_records.get(name, {})
         if not isinstance(record, dict):
             diagnostics.append(f"{name}: invalid phase record")
             record = {}
         phases[name] = phase_summary(result_dir, name, runtime, record, diagnostics)
-    experiment_steps = [steps[name] for name in STEPS if name not in (
-        "stop_pdd", "summarize_results",
-    )]
+    experiment_steps = [
+        steps[name]
+        for name in STEPS
+        if name
+        not in (
+            "stop_pdd",
+            "summarize_results",
+        )
+    ]
     if any(
-        step["status"] == "FAILED" or any(
+        step["status"] == "FAILED"
+        or any(
             isinstance(attempt, dict) and attempt.get("status") == "FAILED"
             for attempt in step.get("attempts", [])
-        ) for step in experiment_steps
-    ) or any(
-        phase["status"] == "FAILED" for phase in phases.values()
-    ):
+        )
+        for step in experiment_steps
+    ) or any(phase["status"] == "FAILED" for phase in phases.values()):
         status = "FAILED"
     elif (
         all(steps[name]["status"] == "SUCCESS" for name in REQUIRED_STEPS)
@@ -427,11 +606,23 @@ def generate(result_dir: Path | str, runtime: dict, stages: dict,
         status = "INCOMPLETE"
     diagnostics.extend(history_diagnostics)
     artifact_names = (
-        "*.log", "*.env", "*.jsonl", "workload_phases.json", "stages.json",
-        "workload_summary.txt", "correctness*.json", "correctness*.txt",
+        "*.log",
+        "*.env",
+        "*.jsonl",
+        "workload_phases.json",
+        "stages.json",
+        "workload_summary.txt",
+        "correctness*.json",
+        "correctness*.txt",
     )
-    artifacts = sorted({str(path) for pattern in artifact_names
-                        for path in result_dir.glob(pattern) if path.is_file()})
+    artifacts = sorted(
+        {
+            str(path)
+            for pattern in artifact_names
+            for path in result_dir.glob(pattern)
+            if path.is_file()
+        }
+    )
     summary = {
         "schema_version": 1,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -451,6 +642,37 @@ def generate(result_dir: Path | str, runtime: dict, stages: dict,
         "diagnostics": diagnostics,
         "artifacts": artifacts,
     }
+    if profiled:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from tools.hetero.profiler.pdd_summary import metrics
+
+        sources = result_dir / "profile/import_sources.json"
+        if sources.exists():
+            summary["configuration"].update(json.loads(sources.read_text()))
+        path = result_dir / "profile/measure/profile/summary.json"
+        data = json.loads(path.read_text()) if path.exists() else {}
+        summary["profiler"] = data
+        summary["diagnostics"].extend(data.get("failures", []))
+        if not data:
+            summary["diagnostics"].append(
+                "profile/measure/profile/summary.json missing"
+            )
+        if data.get("run_status") != "PASS" or data.get("analysis_status") != "PASS":
+            summary["experiment_status"] = "FAILED" if data else "INCOMPLETE"
+        summary["unavailable_metrics"] = {
+            name: node.get("reason")
+            for name, node in metrics(data)
+            if node["status"] == "not_collected"
+        }
+        summary["timing_definition"] = "Profiler MONOTONIC client/server intervals."
+        summary["throughput_definition"] = (
+            "Profiler successful output tokens / makespan."
+        )
+        summary["latency_definition"] = (
+            "Streaming TTFT/TPOT/E2E; synthetic token input."
+        )
     atomic_text(result_dir / "summary.json", json.dumps(summary, indent=2) + "\n")
     atomic_text(result_dir / "summary.csv", render_csv(summary))
     atomic_text(result_dir / "summary.md", render_markdown(summary))

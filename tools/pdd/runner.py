@@ -39,21 +39,42 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 STEPS = (
-    "prepare_run", "start_prefill", "start_decode", "start_proxy",
-    "check_correctness", "warmup", "run_workload", "stop_pdd", "summarize_results",
+    "prepare_run",
+    "start_prefill",
+    "start_decode",
+    "start_proxy",
+    "check_correctness",
+    "warmup",
+    "run_workload",
+    "stop_pdd",
+    "summarize_results",
 )
 ROLES = ("PREFILL", "DECODE", "PROXY")
 TIMEOUTS = {"PREFILL": 900, "DECODE": 2400, "PROXY": 60}
 WORKLOAD_DEFAULTS = {
-    "WARMUP_REQUESTS": "3", "MEASURE_REQUESTS": "20", "CONCURRENCY": "1",
-    "MAX_TOKENS": "128", "PROMPT_MODE": "long",
+    "WARMUP_REQUESTS": "3",
+    "MEASURE_REQUESTS": "20",
+    "CONCURRENCY": "1",
+    "MAX_TOKENS": "128",
+    "PROMPT_MODE": "long",
 }
 # These are the inherited runtime/search settings needed across independent shells.
 # Do not serialize the entire environment (in particular CI credentials/tokens).
 SAVED_ENV = (
-    "PATH", "HOME", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "LIBRARY_PATH",
-    "HF_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE", "TRANSFORMERS_CACHE",
-    "XDG_CACHE_HOME", "TMPDIR", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LD_LIBRARY_PATH",
+    "LIBRARY_PATH",
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "XDG_CACHE_HOME",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "REQUESTS_CA_BUNDLE",
 )
 
 
@@ -141,7 +162,7 @@ def load_pids(result_dir, runtime, stages):
     values = dict(bindings)
     diagnostics = []
     damaged_roles = set()
-    for number, line in enumerate(source[len(header):].splitlines(), 1):
+    for number, line in enumerate(source[len(header) :].splitlines(), 1):
         if not line.strip():
             continue
         marker = re.match(r"\s*(PREFILL|DECODE|PROXY)_", line)
@@ -259,7 +280,12 @@ def execution_env(runtime):
             env[key] = runtime[f"ENV_{key}"]
     env.update({k: v for k, v in runtime.items() if not k.startswith("ENV_")})
     env["PDD_CONTROL_PY"] = sys.executable
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env.update(
+        PYTHONNOUSERSITE="1",
+        PYTHONDONTWRITEBYTECODE="1",
+        PYTHONHASHSEED="0",
+        PYTHONPATH=runtime.get("REPO", str(REPO)),
+    )
     return env
 
 
@@ -267,7 +293,10 @@ def proc_identity(pid):
     try:
         tail = Path(f"/proc/{pid}/stat").read_text().rsplit(") ", 1)[1].split()
         return {
-            "state": tail[0], "PGID": tail[2], "SID": tail[3], "STARTTIME": tail[19]
+            "state": tail[0],
+            "PGID": tail[2],
+            "SID": tail[3],
+            "STARTTIME": tail[19],
         }
     except (OSError, IndexError):
         return None
@@ -358,8 +387,13 @@ def check_devices(runtime, role):
     env = execution_env(runtime)
     if role == "PREFILL":
         line = capture(
-            ["nvidia-smi", "-i", runtime["CUDA_DEVICE"],
-             "--query-gpu=index,uuid,name", "--format=csv,noheader,nounits"],
+            [
+                "nvidia-smi",
+                "-i",
+                runtime["CUDA_DEVICE"],
+                "--query-gpu=index,uuid,name",
+                "--format=csv,noheader,nounits",
+            ],
             env=env,
         )
         parts = line.split(",")
@@ -446,9 +480,14 @@ def run_helper(args, env, logfile):
     # Drain output into both the console and the durable per-attempt log.
     with open(logfile, "a", encoding="utf-8") as log:
         process = subprocess.Popen(
-            args, env=env, cwd=env["REPO"], stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, start_new_session=True,
+            args,
+            env=env,
+            cwd=env["REPO"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
         )
         identity = None
         try:
@@ -547,8 +586,10 @@ def load_state(result_dir, tolerate=False):
 def prepare(result_dir, stages, logfile):
     env = dict(os.environ)
     env.update(
-        RESULT_DIR=str(result_dir), RUN_ID=stages["run_id"],
-        REPO=str(Path(env.get("REPO", REPO)).resolve()), PDD_CONTROL_PY=sys.executable,
+        RESULT_DIR=str(result_dir),
+        RUN_ID=stages["run_id"],
+        REPO=str(Path(env.get("REPO", REPO)).resolve()),
+        PDD_CONTROL_PY=sys.executable,
     )
     root = Path(
         env.get("RESULT_ROOT", Path.home() / "vllm-rbln-profile-results")
@@ -569,19 +610,53 @@ def prepare(result_dir, stages, logfile):
             if key in env:
                 runtime[f"ENV_{key}"] = env[key]
         runtime.update(
-            MAX_MODEL_LEN="1024", MAX_NUM_SEQS="1", TENSOR_PARALLEL_SIZE="1",
-            NUM_GPU_BLOCKS_OVERRIDE="32", SEED="0", ENABLE_CHUNKED_PREFILL="1",
+            MAX_MODEL_LEN="1024",
+            MAX_NUM_SEQS="1",
+            TENSOR_PARALLEL_SIZE="1",
+            NUM_GPU_BLOCKS_OVERRIDE="32",
+            SEED="0",
+            ENABLE_CHUNKED_PREFILL="1",
             ENABLE_PREFIX_CACHING="0",
         )
         write_env(result_dir / "runtime.env", runtime)
         stages["runtime_sha256"] = hashlib.sha256(
             (result_dir / "runtime.env").read_bytes()
         ).hexdigest()
-        write_env(result_dir / "pids.env", {
-            "RESULT_DIR": str(result_dir), "RUN_ID": stages["run_id"],
-            "RUNTIME_SHA256": stages["runtime_sha256"],
-        })
+        write_env(
+            result_dir / "pids.env",
+            {
+                "RESULT_DIR": str(result_dir),
+                "RUN_ID": stages["run_id"],
+                "RUNTIME_SHA256": stages["runtime_sha256"],
+            },
+        )
+    if os.environ.get("PDD_PROFILE_MODE"):
+        profile_step(result_dir, runtime, "prepare", logfile)
     print(f"RESULT_DIR={result_dir}")
+
+
+def profile_step(result_dir, runtime, step, logfile, *extra):
+    command = [
+        runtime["CUDA_PY"],
+        str(REPO / "tools/hetero/profiler/pdd_ci.py"),
+        step,
+        "--result-dir",
+        str(result_dir),
+        *extra,
+    ]
+    run_helper(command, execution_env(runtime), logfile)
+
+
+def server_options(result_dir, runtime, role):
+    command = ["bash", str(HERE / "legacy_steps.sh"), "commands", role]
+    env = execution_env(runtime)
+    path = result_dir / "profile/server_options.json"
+    if path.exists() and role in ("PREFILL", "DECODE"):
+        key = "prefill" if role == "PREFILL" else "decode0"
+        options = json.loads(path.read_text())[key]
+        command += options["args"]
+        env.update(options["env"])
+    return command, env
 
 
 def start_role(result_dir, runtime, pids, stages, role):
@@ -596,7 +671,9 @@ def start_role(result_dir, runtime, pids, stages, role):
             print(f"Reusing verified {role} PID {pids[role + '_PID']}")
             return
         predecessors = {
-            "PREFILL": (), "DECODE": ("PREFILL",), "PROXY": ("PREFILL", "DECODE")
+            "PREFILL": (),
+            "DECODE": ("PREFILL",),
+            "PROXY": ("PREFILL", "DECODE"),
         }
         for predecessor in predecessors[role]:
             wait_ready(runtime, pids, predecessor, 10)
@@ -613,11 +690,16 @@ def start_role(result_dir, runtime, pids, stages, role):
             signal.signal(sig, lambda received, frame: pending_signals.append(received))
         try:
             with open(logfile, "a") as log:
+                command, env = server_options(result_dir, runtime, role)
                 process = subprocess.Popen(
-                    ["bash", str(HERE / "legacy_steps.sh"), "commands", role],
-                    env=execution_env(runtime), cwd=runtime["REPO"],
-                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                    start_new_session=True, close_fds=True,
+                    command,
+                    env=env,
+                    cwd=runtime["REPO"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=log,
+                    start_new_session=True,
+                    close_fds=True,
                 )
             identity = proc_identity(process.pid)
             if (
@@ -630,13 +712,15 @@ def start_role(result_dir, runtime, pids, stages, role):
                     f"log: {logfile}"
                 )
             updated = dict(pids)
-            updated.update({
-                f"{role}_PID": str(process.pid),
-                **{
-                    f"{role}_{key}": identity[key]
-                    for key in ("PGID", "SID", "STARTTIME")
-                },
-            })
+            updated.update(
+                {
+                    f"{role}_PID": str(process.pid),
+                    **{
+                        f"{role}_{key}": identity[key]
+                        for key in ("PGID", "SID", "STARTTIME")
+                    },
+                }
+            )
             updated[f"{role}_SHA256"] = pid_record_digest(updated, role)
             write_env(result_dir / "pids.env", updated)
             pids.update(updated)
@@ -649,7 +733,8 @@ def start_role(result_dir, runtime, pids, stages, role):
                 except (RunError, OSError, subprocess.TimeoutExpired) as cleanup_error:
                     print(
                         f"ERROR: unrecorded {role} cleanup: {cleanup_error}; "
-                        f"log: {logfile}", file=sys.stderr,
+                        f"log: {logfile}",
+                        file=sys.stderr,
                     )
             raise
         finally:
@@ -670,6 +755,8 @@ def start_role(result_dir, runtime, pids, stages, role):
         if role == "PROXY":
             for current in ROLES:
                 wait_ready(runtime, pids, current, 10)
+            if (result_dir / "profile/server_options.json").exists():
+                profile_step(result_dir, runtime, "collect", logfile)
         print(f"{role}_PID={process.pid}\n{role}_PORT={runtime[role + '_PORT']}")
 
 
@@ -724,13 +811,20 @@ def execute(args, result_dir, explicit):
         attempts = (previous or {}).get("attempts", [])
         if previous:
             attempts = [
-                *attempts, {k: v for k, v in previous.items() if k != "attempts"}
+                *attempts,
+                {k: v for k, v in previous.items() if k != "attempts"},
             ]
         logfile = result_dir / f"{step}.{len(attempts) + 1}.log"
         record = {
-            "run_id": stages["run_id"], "stage": step, "status": "RUNNING",
-            "started_at": utcnow(), "ended_at": None, "elapsed_seconds": None,
-            "exit_code": None, "reason": None, "log_path": str(logfile),
+            "run_id": stages["run_id"],
+            "stage": step,
+            "status": "RUNNING",
+            "started_at": utcnow(),
+            "ended_at": None,
+            "elapsed_seconds": None,
+            "exit_code": None,
+            "reason": None,
+            "log_path": str(logfile),
             "attempts": attempts,
         }
         stages["steps"][step] = record
@@ -750,7 +844,10 @@ def execute(args, result_dir, explicit):
                 prepare(result_dir, stages, logfile)
             elif step.startswith("start_"):
                 start_role(
-                    result_dir, runtime, pids, stages,
+                    result_dir,
+                    runtime,
+                    pids,
+                    stages,
                     step.removeprefix("start_").upper(),
                 )
             elif step == "summarize_results":
@@ -764,7 +861,8 @@ def execute(args, result_dir, explicit):
                     and runtime.get("RUN_ID") == stages.get("run_id")
                     and hashlib.sha256(
                         (result_dir / "runtime.env").read_bytes()
-                    ).hexdigest() == stages.get("runtime_sha256")
+                    ).hexdigest()
+                    == stages.get("runtime_sha256")
                 )
                 if not bound:
                     raise RunError("unsafe cleanup metadata: " + "; ".join(diagnostics))
@@ -775,10 +873,25 @@ def execute(args, result_dir, explicit):
                 env = execution_env(runtime)
                 env.update(pids)
                 env["PDD_STATE_ERRORS"] = "; ".join(diagnostics)
-                with launch_lock(runtime):
-                    run_helper(
-                        ["bash", str(HERE / "legacy_steps.sh"), "stop"], env, logfile
-                    )
+                profiling = (result_dir / "profile").exists()
+                profile_error = None
+                if profiling:
+                    try:
+                        profile_step(result_dir, runtime, "before_stop", logfile)
+                    except Exception as exc:
+                        profile_error = exc
+                try:
+                    with launch_lock(runtime):
+                        run_helper(
+                            ["bash", str(HERE / "legacy_steps.sh"), "stop"],
+                            env,
+                            logfile,
+                        )
+                finally:
+                    if profiling:
+                        profile_step(result_dir, runtime, "after_stop", logfile)
+                if profile_error:
+                    raise profile_error
             else:
                 check_code(runtime)
                 for role in ROLES:
@@ -801,15 +914,31 @@ def execute(args, result_dir, explicit):
                     command = ["bash", str(HERE / "legacy_steps.sh"), "correctness"]
                 else:
                     if not explicit and args.phase is None and step == "run_workload":
-                        env.update({
-                            key: os.environ[key]
-                            for key in WORKLOAD_DEFAULTS if key in os.environ
-                        })
+                        env.update(
+                            {
+                                key: os.environ[key]
+                                for key in WORKLOAD_DEFAULTS
+                                if key in os.environ
+                            }
+                        )
                     validate_workload(env)
                     phase = "warmup" if step == "warmup" else (args.phase or "all")
                     command = [
-                        runtime["CUDA_PY"], str(HERE / "workload.py"), "--phase", phase
+                        runtime["CUDA_PY"],
+                        str(HERE / "workload.py"),
+                        "--phase",
+                        phase,
                     ]
+                    if (result_dir / "profile/server_options.json").exists():
+                        command = [
+                            runtime["CUDA_PY"],
+                            str(REPO / "tools/hetero/profiler/pdd_ci.py"),
+                            "workload",
+                            "--result-dir",
+                            str(result_dir),
+                            "--phase",
+                            phase,
+                        ]
                 run_helper(command, env, logfile)
         except (Exception, KeyboardInterrupt) as exc:
             code = 130 if isinstance(exc, KeyboardInterrupt) else 1
@@ -819,13 +948,21 @@ def execute(args, result_dir, explicit):
             print(f"ERROR: {record['reason']}", file=sys.stderr)
         finally:
             record.update(
-                status="SUCCESS" if code == 0 else "FAILED", ended_at=utcnow(),
-                elapsed_seconds=time.monotonic() - started, exit_code=code,
+                status="SUCCESS" if code == 0 else "FAILED",
+                ended_at=utcnow(),
+                elapsed_seconds=time.monotonic() - started,
+                exit_code=code,
             )
             atomic_json(result_dir / "stages.json", stages)
         if step == "summarize_results":
             try:
                 from summary import generate
+
+                if (result_dir / "profile").exists():
+                    try:
+                        profile_step(result_dir, runtime, "analyze", logfile)
+                    except Exception as exc:
+                        diagnostics.append(f"profiler analysis: {exc}")
                 generate(result_dir, runtime, stages, diagnostics)
                 record.update(
                     ended_at=utcnow(), elapsed_seconds=time.monotonic() - started
@@ -836,8 +973,11 @@ def execute(args, result_dir, explicit):
                 print(f"SUMMARY_FILE={result_dir / 'summary.md'}")
             except Exception as exc:
                 record.update(
-                    status="FAILED", exit_code=1, reason=str(exc),
-                    ended_at=utcnow(), elapsed_seconds=time.monotonic() - started,
+                    status="FAILED",
+                    exit_code=1,
+                    reason=str(exc),
+                    ended_at=utcnow(),
+                    elapsed_seconds=time.monotonic() - started,
                 )
                 atomic_json(result_dir / "stages.json", stages)
                 print(f"ERROR: summary generation failed: {exc}", file=sys.stderr)
@@ -863,7 +1003,8 @@ def main(argv=None):
     )
     if step == "run_workload":
         parser.add_argument(
-            "--phase", choices=("all", "measure"),
+            "--phase",
+            choices=("warmup", "all", "measure"),
             help="default all keeps warmup + profiling pause + measure",
         )
     args = parser.parse_args(arguments)
@@ -878,9 +1019,9 @@ def main(argv=None):
         if args.step == "start_pdd":
             for step in ("prepare_run", "start_prefill", "start_decode", "start_proxy"):
                 # Invoke the same public entry points, with exactly one preparation.
-                code = subprocess.call([
-                    "bash", str(REPO / f"{step}.sh"), "--result-dir", str(result_dir)
-                ])
+                code = subprocess.call(
+                    ["bash", str(REPO / f"{step}.sh"), "--result-dir", str(result_dir)]
+                )
                 if code:
                     return code
             # prepare_run already printed the single RESULT_DIR line consumed

@@ -36,32 +36,37 @@ def port_ready(port):
         return client.connect_ex(("127.0.0.1", port)) == 0
 
 
-def wait_for_layout(root, timeout=30):
+def wait_for_layout(root, timeout=30, roles=("decode0", "decode1")):
     def ready():
         found = set()
-        for role in ("decode0", "decode1"):
+        for role in roles:
             for path in (root / "rbln_metrics" / role).glob("events_*.jsonl"):
                 for row in live_rows(path):
                     if row.get("kind") == "kv_layout":
                         if row.get("use_host_buffer") is not True:
                             raise RuntimeError(f"{role}: host buffer is not enabled")
                         found.add(role)
-        return len(found) == 2
+        return len(found) == len(roles)
 
     wait_until(ready, timeout, "kv_layout")
 
 
 class Monitors:
-    def __init__(self, root):
+    def __init__(self, root, on_start=None):
         self.root, self.processes = Path(root), {}
+        self.on_start = on_start
 
     def start(self, name, argv, env=None, probe=None):
         directory = self.root / "monitor"
         directory.mkdir(parents=True, exist_ok=True)
         with (directory / f"{name}.log").open("ab") as output:
             io = dict(stdin=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+            if self.on_start:
+                io["start_new_session"] = True
             process = subprocess.Popen(argv, env=env, cwd=REPO, stdout=output, **io)
         self.processes[name] = process
+        if self.on_start:
+            self.on_start(name, process)
         log_line(name, f"start: {argv}")
 
         def ready():

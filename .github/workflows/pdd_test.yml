@@ -1,3 +1,6 @@
+# Profiling tools are installed automatically under the runner account's $HOME.
+# The runner needs github.com and PyPI access for the first pinned installation.
+# All jobs pin GITHUB_SHA (detached HEAD), preserving the existing branch checks.
 name: PDD Test
 
 on:
@@ -9,6 +12,13 @@ on:
 concurrency:
   group: pdd-test
   cancel-in-progress: false
+
+env:
+  PDD_PROFILE_MODE: trace
+  GPU_MEM_BW_GBPS: '1792'
+  NPU_MEM_BW_GBPS: '256'
+  GPU_MEM_BW_SOURCE: 'NVIDIA GeForce RTX 5090 specifications (GDDR7)'
+  NPU_MEM_BW_SOURCE: 'Rebellions ATOM CA22 specifications (GDDR6)'
 
 jobs:
   prepare-run:
@@ -23,6 +33,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Allocate result directory
@@ -34,7 +45,10 @@ jobs:
       - name: Prepare run
         env:
           RESULT_DIR: ${{ steps.result-dir.outputs.result_dir }}
-        run: ./prepare_run.sh
+        run: |
+          source ./profile_tools_env.sh --install
+          unset RUNNER_TRACKING_ID
+          ./prepare_run.sh
 
   start-prefill:
     name: Start prefill
@@ -46,6 +60,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Start prefill
@@ -65,6 +80,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Start decode
@@ -84,11 +100,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Start proxy
         run: |
           unset RUNNER_TRACKING_ID
+          source ./profile_tools_env.sh
           ./start_proxy.sh
 
   check-correctness:
@@ -103,6 +121,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Check correctness
@@ -120,6 +139,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Warmup
@@ -137,6 +157,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Run workload
@@ -152,7 +173,7 @@ jobs:
       - check-correctness
       - warmup
       - run-workload
-    if: ${{ always() && needs.prepare-run.result == 'success' }}
+    if: ${{ always() && needs.prepare-run.outputs.result_dir != '' }}
     runs-on: self-hosted
     env:
       RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
@@ -160,10 +181,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Stop PDD
-        run: ./stop_pdd.sh
+        run: |
+          source ./profile_tools_env.sh
+          ./stop_pdd.sh
 
   summarize-results:
     name: Summarize results
@@ -178,10 +202,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Summarize results
         run: |
+          source ./profile_tools_env.sh
           ./summarize_results.sh
           cat "$RESULT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
@@ -198,5 +224,11 @@ jobs:
         with:
           name: pdd-results-${{ github.run_attempt }}
           path: |
-            ${{ needs.prepare-run.outputs.result_dir }}/
-            !${{ needs.prepare-run.outputs.result_dir }}/cache/**
+            ${{ needs.prepare-run.outputs.result_dir }}/summary.*
+            ${{ needs.prepare-run.outputs.result_dir }}/stages.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/run.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/service.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/input_length.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/trace_wait.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.json
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.csv

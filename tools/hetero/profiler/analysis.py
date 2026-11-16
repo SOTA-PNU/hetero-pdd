@@ -47,7 +47,7 @@ def validate_raw(folder, rows, config):
     return dict(run_status="FAILED" if failures else "PASS", failures=failures)
 
 
-def client_metrics(rows):
+def client_metrics(rows, device_count=3):
     requests, samples = [], []
     fields = "scheduled_arrival assigned actual_send first_output last_output completed"
     for row in rows:
@@ -113,7 +113,8 @@ def client_metrics(rows):
             total / makespan if makespan else None, unit, "no_duration"
         )
     summary["tok_per_s_per_device"] = metric(
-        totals["output"] / makespan / 3 if makespan else None, "tokens/s/device"
+        totals["output"] / makespan / device_count if makespan else None,
+        "tokens/s/device",
     )
     for key in samples[0][1] if samples else ():
         values = [v[key] for ok, v in samples if ok or key == "queue_wait"]
@@ -275,13 +276,20 @@ def analyze(service_run, workload):
                 result["failures"].append(
                     f"{kind}: {item} (otel/traces.jsonl or rbln_metrics)"
                 )
-    result.update(client=client_metrics(rows), per_device={})
+    result.update(
+        client=client_metrics(
+            rows, len(config.get("active_devices", resources.DEVICES))
+        ),
+        per_device={},
+    )
     result.update(configuration=config["configuration"], mode=mode, workload=workload)
     for role, names in ids.items():
         subset = [
             r for r in rows if r["request_id"] in names or r["assigned_target"] == role
         ]
-        result["per_device"][role] = client_metrics(subset)
+        result["per_device"][role] = client_metrics(
+            subset, 1 if "active_devices" in config else 3
+        )
     result.update(
         server={}, transfer={}, memory_bandwidth={}, phase_resources={}, energy={}
     )
@@ -297,13 +305,18 @@ def analyze(service_run, workload):
             config, rows, events, result["server"], links, window
         )
         series = resources.read_samples(collected, links, window)
-        phases = resources.phase_intervals(rows, ids, spans, events, anchors, trace)
+        phases = resources.phase_intervals(
+            rows, ids, spans, events, anchors, trace, config.get("role_devices")
+        )
         result["phase_resources"] = resources.phase_resources(
             series, phases, window, trace
         )
         power = {d: series[d, "power"] for d in resources.DEVICES}
         tokens = result["client"]["summary"]["actual_output_tokens_total"]["value"]
-        result["energy"] = resources.energy_efficiency(power, window, tokens)
+        result["active_devices"] = config.get("active_devices", list(resources.DEVICES))
+        result["energy"] = resources.energy_efficiency(
+            power, window, tokens, result["active_devices"]
+        )
     result["request_phase_share"] = resources.request_phase_share(
         rows, ids, spans, events, anchors, trace
     )
