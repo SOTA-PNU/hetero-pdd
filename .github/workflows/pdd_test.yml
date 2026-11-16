@@ -1,6 +1,3 @@
-# Profiling tools are installed automatically under the runner account's $HOME.
-# The runner needs github.com and PyPI access for the first pinned installation.
-# All jobs pin GITHUB_SHA (detached HEAD), preserving the existing branch checks.
 name: PDD Test
 
 on:
@@ -14,180 +11,143 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  PDD_CONTAINER: pdd-${{ github.run_id }}-${{ github.run_attempt }}
   PDD_PROFILE_MODE: trace
-  GPU_MEM_BW_GBPS: '1792'
   NPU_MEM_BW_GBPS: '256'
-  GPU_MEM_BW_SOURCE: 'NVIDIA GeForce RTX 5090 specifications (GDDR7)'
-  NPU_MEM_BW_SOURCE: 'Rebellions ATOM CA22 specifications (GDDR6)'
 
 jobs:
-  prepare-run:
-    name: Prepare run
+  build-image:
+    name: Build Docker image
     runs-on: self-hosted
-    env:
-      CUDA_PY: ${{ vars.CUDA_PY }}
-      RBLN_PY: ${{ vars.RBLN_PY }}
-    outputs:
-      result_dir: ${{ steps.result-dir.outputs.result_dir }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
+      - name: Remove stale PDD containers
+        run: docker ps -aq --filter 'name=^pdd-' | xargs -r docker rm -f
+
+      - name: Build PDD image
+        run: |
+          docker build \
+            --build-context wheels=/opt/wheels \
+            --label hetero-pdd=1 \
+            -f docker/Dockerfile \
+            -t hetero-pdd .
+
+      - name: Remove untagged PDD images
+        run: docker image prune -f --filter label=hetero-pdd=1
+
+  prepare-run:
+    name: Prepare run
+    needs: build-image
+    runs-on: self-hosted
+    outputs:
+      result_dir: ${{ steps.result-dir.outputs.result_dir }}
+    steps:
       - name: Allocate result directory
         id: result-dir
         run: |
-          RESULT_DIR="$HOME/vllm-rbln-profile-results/native-dtype-$(date +%Y%m%d-%H%M%S)-gh${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          echo "result_dir=$RESULT_DIR" >> "$GITHUB_OUTPUT"
+          result_root="$HOME/pdd-profile-results"
+          result_dir="$result_root/native-dtype-gh${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p -- "$result_root"
+          echo "result_dir=$result_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare run
+      - name: Start PDD container
         env:
           RESULT_DIR: ${{ steps.result-dir.outputs.result_dir }}
         run: |
-          source ./profile_tools_env.sh --install
-          unset RUNNER_TRACKING_ID
-          ./prepare_run.sh
+          result_root=$(dirname -- "$RESULT_DIR")
+          model_cache="$HOME/.cache/huggingface"
+          mkdir -p -- "$model_cache"
+          docker run --rm --init -d \
+            --name "$PDD_CONTAINER" \
+            --gpus all \
+            --device rebellions.ai/npu=all \
+            --network host \
+            --ipc host \
+            --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$result_root,dst=$result_root" \
+            --mount "type=bind,src=$model_cache,dst=/tmp/pdd-home/hf-cache" \
+            -e USER="$(id -un)" \
+            -e LOGNAME="$(id -un)" \
+            -e RESULT_ROOT="$result_root" \
+            -e RESULT_DIR \
+            -e HF_HOME=/tmp/pdd-home/hf-cache \
+            -e PDD_PROFILE_MODE \
+            -e NPU_MEM_BW_GBPS \
+            hetero-pdd sleep infinity
+
+      - name: Prepare run
+        run: |
+          docker exec "$PDD_CONTAINER" bash -lc \
+            'source ./profile_tools_env.sh && "$CUDA_PY" -c "from huggingface_hub import snapshot_download; snapshot_download(\"Qwen/Qwen3-0.6B\")" && ./prepare_run.sh'
 
   start-prefill:
     name: Start prefill
     needs: prepare-run
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Start prefill
-        run: |
-          unset RUNNER_TRACKING_ID
-          ./start_prefill.sh
+        run: docker exec "$PDD_CONTAINER" ./start_prefill.sh
 
   start-decode:
     name: Start decode
-    needs:
-      - prepare-run
-      - start-prefill
+    needs: start-prefill
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Start decode
-        run: |
-          unset RUNNER_TRACKING_ID
-          ./start_decode.sh
+        run: docker exec "$PDD_CONTAINER" ./start_decode.sh
 
   start-proxy:
     name: Start proxy
-    needs:
-      - prepare-run
-      - start-decode
+    needs: start-decode
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Start proxy
         run: |
-          unset RUNNER_TRACKING_ID
-          source ./profile_tools_env.sh
-          ./start_proxy.sh
+          docker exec "$PDD_CONTAINER" bash -lc \
+            'source ./profile_tools_env.sh && ./start_proxy.sh'
 
   check-correctness:
     name: Check correctness
-    needs:
-      - prepare-run
-      - start-proxy
+    needs: start-proxy
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Check correctness
-        run: ./check_correctness.sh
+        run: docker exec "$PDD_CONTAINER" ./check_correctness.sh
 
   warmup:
     name: Warmup
-    needs:
-      - prepare-run
-      - check-correctness
+    needs: check-correctness
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Warmup
-        run: ./warmup.sh
+        run: docker exec "$PDD_CONTAINER" ./warmup.sh
 
   run-workload:
     name: Run workload
-    needs:
-      - prepare-run
-      - warmup
+    needs: warmup
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Run workload
-        run: ./run_workload.sh --phase measure
+        run: docker exec "$PDD_CONTAINER" ./run_workload.sh --phase measure
 
   stop-pdd:
     name: Stop PDD
-    needs:
-      - prepare-run
-      - start-prefill
-      - start-decode
-      - start-proxy
-      - check-correctness
-      - warmup
-      - run-workload
+    needs: [prepare-run, run-workload]
     if: ${{ always() && needs.prepare-run.outputs.result_dir != '' }}
     runs-on: self-hosted
-    env:
-      RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Stop PDD
         run: |
-          source ./profile_tools_env.sh
-          ./stop_pdd.sh
+          if [[ "$(docker inspect -f '{{.State.Running}}' "$PDD_CONTAINER" 2>/dev/null)" == true ]]; then
+            docker exec "$PDD_CONTAINER" bash -lc \
+              'source ./profile_tools_env.sh && ./stop_pdd.sh'
+          fi
 
   summarize-results:
     name: Summarize results
@@ -199,35 +159,28 @@ jobs:
     env:
       RESULT_DIR: ${{ needs.prepare-run.outputs.result_dir }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
       - name: Summarize results
         run: |
-          source ./profile_tools_env.sh
-          ./summarize_results.sh
+          docker exec "$PDD_CONTAINER" bash -lc \
+            'source ./profile_tools_env.sh && ./summarize_results.sh'
           cat "$RESULT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate Perfetto timeline
         if: ${{ always() }}
         continue-on-error: true
         run: |
-          source ./profile_tools_env.sh
-          "$PDD_TOOLS_PY" tools/hetero/profiler/perfetto_timeline.py \
-            --run-dir "$RESULT_DIR/profile" --workload measure
+          docker exec "$PDD_CONTAINER" bash -lc \
+            'source ./profile_tools_env.sh && "$PDD_TOOLS_PY" tools/hetero/profiler/perfetto_timeline.py --run-dir "$RESULT_DIR/profile" --workload measure'
 
-  upload-results:
-    name: Upload PDD results
-    needs:
-      - prepare-run
-      - summarize-results
-    if: ${{ always() && needs.prepare-run.outputs.result_dir != '' }}
-    runs-on: self-hosted
-    steps:
+      - name: Remove PDD container
+        if: ${{ always() }}
+        run: |
+          if docker container inspect "$PDD_CONTAINER" >/dev/null 2>&1; then
+            docker rm -f "$PDD_CONTAINER"
+          fi
+
       - name: Upload PDD results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: pdd-results-${{ github.run_attempt }}
@@ -242,3 +195,9 @@ jobs:
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.csv
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline.pftrace
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline_validation.json
+
+      - name: Prune old PDD results
+        if: ${{ always() }}
+        run: |
+          cd "$(dirname -- "$RESULT_DIR")"
+          ls -dt native-dtype-gh* | tail -n +6 | xargs -r rm -rf --

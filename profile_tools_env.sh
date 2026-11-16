@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Source in each CI job; install once using --install in prepare-run.
+# Source with --install to provision the pinned tools; source again to use them.
 PDD_TOOLS_REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 PDD_TOOLS_HASH=$(sha256sum "$PDD_TOOLS_REPO/tools/hetero/third_party/versions.env")
-PDD_TOOLS_ROOT="$HOME/.cache/pdd-tools/${PDD_TOOLS_HASH%% *}"
+PDD_TOOLS_ROOT="${PDD_TOOLS_CACHE:-$HOME/.cache/pdd-tools}/${PDD_TOOLS_HASH%% *}"
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 PYTHONHASHSEED=0
 export PYTHONPATH="$PDD_TOOLS_REPO"
 pdd_install() {

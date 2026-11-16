@@ -42,6 +42,7 @@ chmod +x "$tools_dir/all-smi" "$tools_dir/otelcol-contrib" "$tools_dir/trace_pro
 export ALLSMI_BIN="$tools_dir/all-smi" OTELCOL_BIN="$tools_dir/otelcol-contrib" PERFETTO_TP_BIN="$tools_dir/trace_processor_shell"
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo" "$venv/bin/python" - <<'PY'
 from tools.hetero.profiler.tools import check_tools
+from tools.hetero.profiler import perfetto_timeline  # verify timeline imports
 for tool, version in check_tools('deep').items():
     print(f'{tool}: {version}')
 PY
