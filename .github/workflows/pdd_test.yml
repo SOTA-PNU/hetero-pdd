@@ -211,6 +211,14 @@ jobs:
           ./summarize_results.sh
           cat "$RESULT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Generate Perfetto timeline
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          source ./profile_tools_env.sh
+          "$PDD_TOOLS_PY" tools/hetero/profiler/perfetto_timeline.py \
+            --run-dir "$RESULT_DIR/profile" --workload measure
+
   upload-results:
     name: Upload PDD results
     needs:
@@ -232,3 +240,5 @@ jobs:
             ${{ needs.prepare-run.outputs.result_dir }}/profile/trace_wait.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.csv
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline.pftrace
+            ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline_validation.json
