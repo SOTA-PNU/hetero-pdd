@@ -42,7 +42,6 @@ CONFIG_KEYS = (
     "REPO",
     "BRANCH",
     "COMMIT",
-    "REQUIRED_LAYOUT_COMMIT",
     "CUDA_PY",
     "RBLN_PY",
     "CUDA_VLLM_VERSION",

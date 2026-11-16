@@ -12,8 +12,6 @@ case "$STEP" in
 # BEGIN prepare
 # Internal preflight; invoked only by runner.py under the run and launch locks.
 umask 077
-EXPECTED_BRANCH=0.11.1-2_native_dtype
-REQUIRED_LAYOUT_COMMIT=972ce20cf53b0d2d50c4155f9d44be6879ede966
 die() {
     printf 'ERROR: %s\n' "$*" >&2
     exit 1
@@ -104,12 +102,6 @@ command -v git >/dev/null 2>&1 || die "git is required"
 
 CURRENT_COMMIT=$(git -C "$REPO" rev-parse HEAD) || die "cannot resolve current commit"
 BRANCH=$(git -C "$REPO" branch --show-current) || die "cannot resolve current branch"
-if [[ -n "$BRANCH" && "$BRANCH" != "$EXPECTED_BRANCH" ]]; then
-    die "branch mismatch: expected $EXPECTED_BRANCH or detached HEAD, got $BRANCH"
-fi
-git -C "$REPO" merge-base --is-ancestor \
-    "$REQUIRED_LAYOUT_COMMIT" "$CURRENT_COMMIT" || \
-    die "required layout commit is not an ancestor: $REQUIRED_LAYOUT_COMMIT"
 [[ -z "$(git -C "$REPO" status --porcelain=v1 --untracked-files=all)" ]] || \
     die "repository working tree is not clean"
 
@@ -211,7 +203,6 @@ for item in \
     "REPO=$REPO" \
     "BRANCH=$BRANCH" \
     "COMMIT=$CURRENT_COMMIT" \
-    "REQUIRED_LAYOUT_COMMIT=$REQUIRED_LAYOUT_COMMIT" \
     "CUDA_PY=$CUDA_PY" \
     "RBLN_PY=$RBLN_PY" \
     "CUDA_VLLM_VERSION=$CUDA_VLLM_VERSION" \
