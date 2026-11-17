@@ -184,7 +184,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pdd-results-${{ github.run_attempt }}
+          if-no-files-found: ignore
           path: |
+            ${{ needs.prepare-run.outputs.result_dir }}/*.log
+            ${{ needs.prepare-run.outputs.result_dir }}/*.env
+            ${{ needs.prepare-run.outputs.result_dir }}/correctness*_response.json
             ${{ needs.prepare-run.outputs.result_dir }}/summary.*
             ${{ needs.prepare-run.outputs.result_dir }}/stages.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/run.json

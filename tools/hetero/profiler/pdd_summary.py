@@ -78,8 +78,9 @@ def key_results(data, config):
     )
     lines += [
         "",
-        f"클라이언트 대기 포함(동시성 {config.get('CONCURRENCY', 'unknown')}, "
-        f"요청 {config.get('MEASURE_REQUESTS', 'unknown')}개 동시 도착)",
+        "Including client-side queueing "
+        f"(concurrency {config.get('CONCURRENCY', 'unknown')}, "
+        f"{config.get('MEASURE_REQUESTS', 'unknown')} requests arriving at once)",
     ]
     lines += table(
         ("Metric (s)", "Mean", "p50", "p90"),
@@ -165,10 +166,27 @@ def observed(data):
         )
         for r in resources.get("samples", [])
     ]
-    lines += ["", "### Device resources"] + folded(
-        "Device resource details",
-        table(("device", "phase", "metric", "mean", "max", "unit"), rows)
-        + metric_table(resources.get("device_phase_active_ratio", {})),
+    devices = sorted({r[0] for r in rows} - {"system"})
+    means = {(d, m): avg for d, phase, m, avg, _, _ in rows if phase == "all"}
+    overview = [
+        (
+            d,
+            "yes" if d in data.get("active_devices", []) else "no",
+            *(means.get((d, m)) for m in ("utilization", "power", "memory")),
+        )
+        for d in devices
+    ]
+    lines += (
+        ["", "### Device resources"]
+        + table(
+            ("device", "active", "utilization (%)", "power (W)", "memory (bytes)"),
+            overview,
+        )
+        + folded(
+            "Device resource details",
+            table(("device", "phase", "metric", "mean", "max", "unit"), rows)
+            + metric_table(resources.get("device_phase_active_ratio", {})),
+        )
     )
     lines += [
         "",
@@ -185,6 +203,10 @@ def observed(data):
 
 
 REASONS = {
+    "device 시간 없음: 호스트 관측 구간 기준 하한 추정": (
+        "device time unavailable; lower bound estimated from host interval"
+    ),
+    "kv_dtype_or_context_missing(H4)": "KV data type or context length is missing",
     "WP9에서 산출": "derived offline only",
     "copy_ 동기 여부 미확인(H4)": (
         "copy_ synchronization not verified; H2D bandwidth not reported"
@@ -201,7 +223,28 @@ REASONS = {
 
 def uncollected(data):
     return [
-        f"- {name}: {REASONS.get(node.get('reason'), 'missing required data')}"
+        f"- {name}: {english_reason(node.get('reason'))}"
         for name, node in visible(data)
         if node["status"] == "not_collected"
     ]
+
+
+def english_reason(reason):
+    if reason in REASONS.values():
+        return reason
+    return REASONS.get(
+        reason, reason.replace("_", " ") if reason else "missing required data"
+    )
+
+
+def english_reasons(value):
+    if isinstance(value, dict):
+        return {
+            k: english_reason(v)
+            if k == "reason" and isinstance(v, str)
+            else english_reasons(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [english_reasons(v) for v in value]
+    return value

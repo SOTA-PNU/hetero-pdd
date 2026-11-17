@@ -17,6 +17,10 @@ class SummaryLayoutTests(unittest.TestCase):
         before = json.dumps(data)
         text = render_markdown(data)
         self.assertEqual(json.dumps(data), before)
+        self.assertNotRegex(text, r"[가-힣]")
+        self.assertIn(
+            "| device | active | utilization (%) | power (W) | memory (bytes) |", text
+        )
         for label in (
             "## Key results",
             "Service TTFT",
@@ -27,7 +31,7 @@ class SummaryLayoutTests(unittest.TestCase):
             "p90",
             "<details>",
             "npu1.energy_j",
-            "동시성 1, 요청 20개 동시 도착",
+            "concurrency 1, 20 requests arriving at once",
             "| device | phase | metric | mean | max | unit |",
             "success_count",
             "failure_count",

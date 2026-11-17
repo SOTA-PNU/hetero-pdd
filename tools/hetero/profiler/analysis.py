@@ -16,6 +16,7 @@ from tools.hetero.profiler import expected, log, resources, server, transfer
 from tools.hetero.profiler.common import live_rows
 from tools.hetero.profiler.common import metric as shared_metric
 from tools.hetero.profiler.expected import request_succeeded
+from tools.hetero.profiler.pdd_summary import english_reasons
 
 KV_KINDS = ("kv_xfer_start", "kv_xfer_done", "kv_h2d")
 
@@ -335,7 +336,9 @@ def analyze(service_run, workload):
     payloads = {k: result[k] for k in ("transfer", "energy")}
     payloads.update(summary=result, memory_bw=result["memory_bandwidth"])
     for name, data in payloads.items():
-        (profile / f"{name}.json").write_text(json.dumps(data, indent=2) + "\n")
+        (profile / f"{name}.json").write_text(
+            json.dumps(english_reasons(data), indent=2) + "\n"
+        )
     for failure in result["failures"]:
         log.log_line("analysis", f"{folder}: {failure}")
     return int(bool(result["failures"]))
