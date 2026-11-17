@@ -1,6 +1,38 @@
 # SPDX-License-Identifier: Apache-2.0
 """Render existing PDD analysis metrics without recomputing them."""
 
+import re
+
+LABELS = {
+    "prefill": "Prefill server (GPU)",
+    "decode0": "Decode server (NPU0)",
+    "summary.queue": "Queue (mean, s)",
+    "summary.prefill": "Prefill compute (mean, s)",
+    "summary.decode": "Decode (token generation) (mean, s)",
+    "summary.kv_cache_usage": "KV cache usage (time-avg)",
+    "summary.avg_running_requests": "Running requests (time-avg)",
+    "summary.waiting_requests": "Waiting requests (time-avg)",
+    "decode": "Decode (NPU)",
+    "kv_transfer": "KV transfer",
+    "layout": "KV load (H2D + transform)",
+    "p_prefill": "Prefill (GPU)",
+    "d_queue": "Decode server queue",
+    "p_queue": "Prefill server queue",
+    "other": "Other (proxy, gaps)",
+}
+
+
+def label(name):
+    return re.sub(
+        r"(?:cmpl-)?[\w-]*-req(-?\d+)(?:-0(?:-[0-9a-f]{8})?)?",
+        r"req \1",
+        LABELS.get(name, name),
+    )
+
+
+def gib(value):
+    return f"{value / 2**30:.2f}" if value is not None else None
+
 
 def metrics(value, prefix=""):
     if isinstance(value, dict):
@@ -106,13 +138,20 @@ def visible(data):
 
 
 def metric_table(values):
+    if isinstance(values, list):
+        values = {
+            r.get("request_id", str(i)): r.get("metrics", r)
+            for i, r in enumerate(values)
+        }
     rows = []
     for name, node in metrics(values):
+        if node["status"] == "not_collected":
+            continue
         value = node.get("value")
         for suffix, item in value.items() if isinstance(value, dict) else [("", value)]:
             rows.append(
                 (
-                    name + ("." + suffix if suffix else ""),
+                    label(name) + ("." + LABELS.get(suffix, suffix) if suffix else ""),
                     item,
                     node["unit"],
                     node["status"],
@@ -126,32 +165,48 @@ def observed(data):
         "",
         "## Observed requests",
         "",
-        "Streaming synthetic tokens; not comparable to the legacy fixed prompt.",
     ]
     for title, key in (
         ("Server stages (OTEL)", "server"),
         ("KV Transfer / KV Load (H2D+transform)", "transfer"),
     ):
-        lines += ["", "### " + title]
+        lines += [
+            "",
+            "### " + title,
+            "",
+            "Server durations come from OTEL spans; gauges are time averages."
+            if key == "server"
+            else "Decoder transfer counters and host KV copy events.",
+        ]
         for role, values in data.get(key, {}).items():
             if key == "transfer" and role == "prefill":
                 continue
-            lines += ["", "#### " + role] + metric_table(
+            lines += ["", "#### " + label(role)] + metric_table(
                 {k: v for k, v in values.items() if k not in ("requests", "boundaries")}
             )
             for field in ("requests", "boundaries"):
                 if values.get(field):
-                    lines += folded(role + " " + field, metric_table(values[field]))
+                    heading = (
+                        "Prometheus metrics: change over the measurement window"
+                        if field == "boundaries"
+                        else label(role) + " request details"
+                    )
+                    lines += folded(heading, metric_table(values[field]))
     lines += folded(
         "Client request details",
         metric_table(data.get("client", {}).get("requests", [])),
     )
     shares = data.get("request_phase_share", {}).get("summary", {}).get("value") or {}
-    lines += ["", "### M14a"] + table(
-        ("Phase", "Share (%)"), [(k, v * 100) for k, v in shares.items()]
+    lines += [
+        "",
+        "### Request time breakdown (share of service time)",
+        "",
+        "Non-overlapping request intervals between client send and completion.",
+    ] + table(
+        ("Phase", "Share (%)"), [(LABELS.get(k, k), v * 100) for k, v in shares.items()]
     )
     lines += folded(
-        "M14a request details",
+        "Request time breakdown details",
         metric_table(data.get("request_phase_share", {}).get("requests", {})),
     )
     resources = data.get("phase_resources", {})
@@ -160,11 +215,16 @@ def observed(data):
             r["device"],
             r["state"],
             r["metric"],
-            (r.get("value") or {}).get("mean"),
-            (r.get("value") or {}).get("max"),
-            r["unit"],
+            gib(r["value"].get("mean"))
+            if r["unit"] == "bytes"
+            else r["value"].get("mean"),
+            gib(r["value"].get("max"))
+            if r["unit"] == "bytes"
+            else r["value"].get("max"),
+            "GiB" if r["unit"] == "bytes" else r["unit"],
         )
         for r in resources.get("samples", [])
+        if r["status"] != "not_collected"
     ]
     devices = sorted({r[0] for r in rows} - {"system"})
     means = {(d, m): avg for d, phase, m, avg, _, _ in rows if phase == "all"}
@@ -177,9 +237,14 @@ def observed(data):
         for d in devices
     ]
     lines += (
-        ["", "### Device resources"]
+        [
+            "",
+            "### Device resources",
+            "",
+            "All-window means from sampled device counters.",
+        ]
         + table(
-            ("device", "active", "utilization (%)", "power (W)", "memory (bytes)"),
+            ("device", "active", "utilization (%)", "power (W)", "memory (GiB)"),
             overview,
         )
         + folded(
@@ -192,6 +257,7 @@ def observed(data):
         "",
         "### Energy",
         "",
+        "Energy is integrated from sampled power over the measurement window. "
         "Inactive devices: energy only; token efficiency applies to active devices.",
     ]
     energy = {
@@ -223,7 +289,7 @@ REASONS = {
 
 def uncollected(data):
     return [
-        f"- {name}: {english_reason(node.get('reason'))}"
+        f"- {label(name)}: {english_reason(node.get('reason'))}"
         for name, node in visible(data)
         if node["status"] == "not_collected"
     ]

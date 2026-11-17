@@ -137,7 +137,9 @@ class PDDIntegrationTests(unittest.TestCase):
         labels = (
             "Script execution steps|Saved configuration|Diagnostics|Original artifacts"
         )
-        labels += "|Observed requests|KV Load|M14a|Device resources|Energy"
+        labels += (
+            "|Observed requests|KV Load|Request time breakdown|Device resources|Energy"
+        )
         labels += "|missing|test failure"
         for label in labels.split("|"):
             self.assertIn(label, text)

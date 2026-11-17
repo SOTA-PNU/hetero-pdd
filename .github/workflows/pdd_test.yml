@@ -179,6 +179,16 @@ jobs:
             docker rm -f "$PDD_CONTAINER"
           fi
 
+      - name: Exclude empty artifact files
+        if: ${{ always() }}
+        id: empty
+        run: |
+          {
+            echo "exclusions<<EMPTY_FILES"
+            find "$RESULT_DIR" -type f -empty -printf '!%p\n'
+            echo "EMPTY_FILES"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload PDD results
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -199,6 +209,10 @@ jobs:
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.csv
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline.pftrace
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline_validation.json
+
+            !${{ needs.prepare-run.outputs.result_dir }}/pids.env
+            !${{ needs.prepare-run.outputs.result_dir }}/runtime.env
+            ${{ steps.empty.outputs.exclusions }}
 
       - name: Prune old PDD results
         if: ${{ always() }}
