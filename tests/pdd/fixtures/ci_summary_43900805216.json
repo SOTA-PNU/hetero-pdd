@@ -1,0 +1,877 @@
+{
+  "experiment_status": "SUCCESS",
+  "cleanup_status": "SUCCESS",
+  "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+  "commit": "38fd51f2cfeb0d14c1e310d7001266cf0b609994",
+  "result_dir": "<REDACTED_PATH>",
+  "configuration": {
+    "CONCURRENCY": "1",
+    "MEASURE_REQUESTS": "20"
+  },
+  "steps": {
+    "prepare_run": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:51:34.268561+00:00",
+      "ended_at": "2026-11-16T15:51:46.039067+00:00",
+      "elapsed_seconds": 11.768284542486072,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "prepare_run"
+    },
+    "start_prefill": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:51:54.142289+00:00",
+      "ended_at": "2026-11-16T15:54:29.003571+00:00",
+      "elapsed_seconds": 154.85985772125423,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "start_prefill"
+    },
+    "start_decode": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:54:38.462432+00:00",
+      "ended_at": "2026-11-16T15:56:58.807388+00:00",
+      "elapsed_seconds": 140.34320235997438,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "start_decode"
+    },
+    "start_proxy": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:57:08.064419+00:00",
+      "ended_at": "2026-11-16T15:57:09.566908+00:00",
+      "elapsed_seconds": 1.5008528251200914,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "start_proxy"
+    },
+    "check_correctness": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:57:21.543913+00:00",
+      "ended_at": "2026-11-16T15:57:29.352435+00:00",
+      "elapsed_seconds": 7.807159772142768,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "check_correctness"
+    },
+    "warmup": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:57:37.596438+00:00",
+      "ended_at": "2026-11-16T15:57:42.204927+00:00",
+      "elapsed_seconds": 4.6071825958788395,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "warmup"
+    },
+    "run_workload": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:57:50.721119+00:00",
+      "ended_at": "2026-11-16T15:58:24.947462+00:00",
+      "elapsed_seconds": 34.22502318955958,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "run_workload"
+    },
+    "stop_pdd": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:58:33.184327+00:00",
+      "ended_at": "2026-11-16T15:58:34.597097+00:00",
+      "elapsed_seconds": 1.4112397693097591,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "attempts": [],
+      "stage": "stop_pdd"
+    },
+    "summarize_results": {
+      "run_id": "pdd-f45df781-b4ac-4a07-b30b-a2d075a6be8f",
+      "status": "SUCCESS",
+      "started_at": "2026-11-16T15:58:45.844024+00:00",
+      "ended_at": "2026-11-16T15:58:47.459231+00:00",
+      "elapsed_seconds": 1.6113035436719656,
+      "exit_code": 0,
+      "reason": null,
+      "log_path": "<REDACTED_PATH>",
+      "stage": "summarize_results",
+      "attempts": []
+    }
+  },
+  "phases": {},
+  "diagnostics": [],
+  "artifacts": [
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>",
+    "<REDACTED_PATH>"
+  ],
+  "profiler": {
+    "client": {
+      "requests": [
+        {
+          "request_id": "measure-seed0-req0000",
+          "metrics": {
+            "ttft_seconds": {
+              "value": 0.21928171999752522,
+              "status": "measured",
+              "reason": null,
+              "source": "requests.jsonl",
+              "unit": "s"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "success_count": {
+          "value": 20,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "requests"
+        },
+        "failure_count": {
+          "value": 0,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "requests"
+        },
+        "incomplete_count": {
+          "value": 0,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "requests"
+        },
+        "makespan_seconds": {
+          "value": 30.67554866336286,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "output_tokens_per_second": {
+          "value": 83.45409003417498,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "tokens/s"
+        },
+        "ttft_mean_seconds": {
+          "value": 14.790209750737995,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "ttft_p50_seconds": {
+          "value": 14.01717620715499,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "ttft_p90_seconds": {
+          "value": 26.30021977238357,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_ttft_mean_seconds": {
+          "value": 0.20801857458427547,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_ttft_p50_seconds": {
+          "value": 0.20838665403425694,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_ttft_p90_seconds": {
+          "value": 0.21348893642425537,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "tpot_mean_seconds": {
+          "value": 0.010431974414941363,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "tpot_p50_seconds": {
+          "value": 0.010439815557026487,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "tpot_p90_seconds": {
+          "value": 0.010520584895972192,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "e2e_mean_seconds": {
+          "value": 16.115472561959177,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "e2e_p50_seconds": {
+          "value": 15.344102507457137,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "e2e_p90_seconds": {
+          "value": 27.63285221159458,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_mean_seconds": {
+          "value": 1.533281385805458,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_p50_seconds": {
+          "value": 1.533661400899291,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        },
+        "service_p90_seconds": {
+          "value": 1.5478333793580532,
+          "status": "measured",
+          "reason": null,
+          "source": "requests.jsonl",
+          "unit": "s"
+        }
+      }
+    },
+    "server": {
+      "decode0": {
+        "summary": {
+          "queue": {
+            "value": 0.1472972108051181,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "prefill": {
+            "value": 0.010086854360997677,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "decode": {
+            "value": 1.3244514729827643,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "kv_cache_usage": {
+            "value": 0.11345884884821604,
+            "unit": "ratio",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454703196761137
+          },
+          "avg_running_requests": {
+            "value": 0.9310510939974301,
+            "unit": "requests",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454703196761137
+          },
+          "waiting_requests": {
+            "value": 0.06894890600256984,
+            "unit": "requests",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454703196761137
+          }
+        },
+        "requests": {
+          "cmpl-measure-seed0-req0000-0": {
+            "queue": {
+              "value": 0.1451855320483446,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "prefill": {
+              "value": 0.010432600975036621,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "decode": {
+              "value": 1.326835623010993,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            }
+          }
+        },
+        "boundaries": {
+          "vllm:mm_cache_hits": {
+            "value": 0.0,
+            "unit": "count",
+            "source": "monitor/boundaries.jsonl",
+            "status": "measured",
+            "reason": null,
+            "sum": 0.0,
+            "count": 0
+          }
+        }
+      },
+      "prefill": {
+        "summary": {
+          "queue": {
+            "value": 3.186902031302452e-05,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "prefill": {
+            "value": 0.03416566411033273,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "decode": {
+            "value": 0,
+            "unit": "s",
+            "source": "otel/traces.jsonl",
+            "status": "measured",
+            "reason": null
+          },
+          "kv_cache_usage": {
+            "value": 0.003336628864627274,
+            "unit": "ratio",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454706280165504
+          },
+          "avg_running_requests": {
+            "value": 0.0,
+            "unit": "requests",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454706280165504
+          },
+          "waiting_requests": {
+            "value": 0.0,
+            "unit": "requests",
+            "source": "monitor/metrics.jsonl",
+            "status": "estimated",
+            "reason": null,
+            "coverage": 0.9454706280165504
+          }
+        },
+        "requests": {
+          "cmpl-measure-seed0-req0000-0": {
+            "queue": {
+              "value": 6.292574107646942e-05,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "prefill": {
+              "value": 0.03880901075899601,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "decode": {
+              "value": 0,
+              "unit": "s",
+              "source": "otel/traces.jsonl",
+              "status": "measured",
+              "reason": null
+            }
+          }
+        },
+        "boundaries": {
+          "vllm:mm_cache_hits": {
+            "value": 0.0,
+            "unit": "count",
+            "source": "monitor/boundaries.jsonl",
+            "status": "measured",
+            "reason": null,
+            "sum": 0.0,
+            "count": 0
+          }
+        }
+      }
+    },
+    "transfer": {
+      "decode0": {
+        "requests": {
+          "cmpl-measure-seed0-req0000-0": {
+            "kv": {
+              "value": 0.078591609,
+              "unit": "s",
+              "source": "rbln_metrics/events_*.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "h2d": {
+              "value": 0.063251243,
+              "unit": "s",
+              "source": "rbln_metrics/events_*.jsonl",
+              "status": "measured",
+              "reason": null,
+              "measurement": "host_call"
+            },
+            "reorder": {
+              "value": 0.0,
+              "unit": "s",
+              "source": "rbln_metrics/events_*.jsonl",
+              "status": "measured",
+              "reason": null
+            },
+            "bytes_per_request_est": {
+              "value": 44040192,
+              "unit": "bytes",
+              "source": "rbln_metrics/events_*.jsonl",
+              "status": "estimated",
+              "reason": null
+            }
+          }
+        },
+        "h2d_gbps_est": {
+          "value": null,
+          "unit": "GB/s",
+          "source": "rbln_metrics/events_*.jsonl",
+          "status": "not_collected",
+          "reason": "copy_ 동기 여부 미확인(H4)"
+        },
+        "nixl_gbps": {
+          "value": 0.5416145059572417,
+          "unit": "GB/s",
+          "source": "monitor/boundaries.jsonl",
+          "status": "measured",
+          "reason": null
+        },
+        "bytes_per_transfer": {
+          "value": null,
+          "unit": "bytes",
+          "source": "monitor/boundaries.jsonl",
+          "status": "not_collected",
+          "reason": "전송 count 단위 미확인(H5)"
+        },
+        "link_theoretical": {
+          "value": 63.008,
+          "unit": "GB/s",
+          "source": "links.json",
+          "status": "measured",
+          "reason": null
+        },
+        "pcie_efficiency": {
+          "value": null,
+          "unit": "ratio",
+          "source": "transfer/links.json",
+          "status": "not_collected",
+          "reason": "copy_ 동기 여부 미확인(H4)"
+        },
+        "kv_transfer_seconds": {
+          "value": 0.08131279999999999,
+          "unit": "s",
+          "source": "monitor/boundaries.jsonl",
+          "status": "measured",
+          "reason": null,
+          "sum": 1.626256,
+          "count": 20.0
+        },
+        "device_seconds": {
+          "value": null,
+          "unit": "s",
+          "source": "rbln_metrics/events_*.jsonl",
+          "status": "not_collected",
+          "reason": "device_time_missing_or_exceeds_window(H4)"
+        },
+        "npu_device_time_ratio": {
+          "value": null,
+          "unit": "ratio",
+          "source": "rbln_metrics/events_*.jsonl",
+          "status": "not_collected",
+          "reason": "device_time_missing_or_exceeds_window(H4)",
+          "raw_value": null
+        },
+        "npu_step_window_ratio": {
+          "value": 0.7629754068760136,
+          "unit": "ratio",
+          "source": "rbln_metrics/events_*.jsonl",
+          "status": "estimated",
+          "reason": null
+        }
+      },
+      "prefill": {
+        "requests": {},
+        "h2d_gbps_est": {
+          "value": null,
+          "unit": "GB/s",
+          "source": "rbln_metrics/events_*.jsonl",
+          "status": "not_collected",
+          "reason": "not_applicable"
+        },
+        "nixl_gbps": {
+          "value": 0.5416145059572417,
+          "unit": "GB/s",
+          "source": "monitor/boundaries.jsonl",
+          "status": "measured",
+          "reason": null
+        },
+        "bytes_per_transfer": {
+          "value": null,
+          "unit": "bytes",
+          "source": "monitor/boundaries.jsonl",
+          "status": "not_collected",
+          "reason": "전송 count 단위 미확인(H5)"
+        },
+        "link_theoretical": {
+          "value": 63.008,
+          "unit": "GB/s",
+          "source": "links.json",
+          "status": "measured",
+          "reason": null
+        },
+        "pcie_efficiency": {
+          "value": 0.008595964099118234,
+          "unit": "ratio",
+          "source": "transfer/links.json",
+          "status": "estimated",
+          "reason": null
+        },
+        "kv_transfer_seconds": {
+          "value": null,
+          "unit": "s",
+          "source": "monitor/boundaries.jsonl",
+          "status": "not_collected",
+          "reason": "zero_count",
+          "sum": 0.0,
+          "count": 0.0
+        }
+      }
+    },
+    "request_phase_share": {
+      "definition": "Trace: clip to [send, completed]; assign each\ninstant once: decode > layout (H2D+reorder) > kv_transfer > prefill > server queues.\nB0: queue/prefill/decode; PDD: p_queue/p_prefill/kv_transfer/layout/d_queue/decode.\nQueue ties: D before P. Other is the uncovered service interval; shares sum to 1.\nMonitor: first-token/after-first-token approximation. Summary: request mean.\nM06-M10 retain their original overlapping elapsed times.",
+      "requests": {
+        "measure-seed0-req0000": {
+          "value": {
+            "decode": 0.8591732102788829,
+            "layout": 0.04169559320621787,
+            "kv_transfer": 0.050890860748582296,
+            "p_prefill": 0.02513021340645604,
+            "d_queue": 0.0022560267484850165,
+            "p_queue": 4.074665318915701e-05,
+            "other": 0.020813348958186668
+          },
+          "unit": "ratio",
+          "source": "spans+events",
+          "status": "measured",
+          "reason": null
+        }
+      },
+      "summary": {
+        "value": {
+          "decode": 0.8638052721062497,
+          "layout": 0.0415143417469888,
+          "kv_transfer": 0.05329299291475752,
+          "p_prefill": 0.02227879386121982,
+          "d_queue": 0.0018111468393140603,
+          "p_queue": 2.07849474644244e-05,
+          "other": 0.017276667584005662
+        },
+        "unit": "ratio",
+        "source": "spans+events",
+        "status": "measured",
+        "reason": null
+      }
+    },
+    "phase_resources": {
+      "samples": [
+        {
+          "device": "gpu",
+          "state": "idle",
+          "metric": "utilization",
+          "value": {
+            "mean": 0.8180484678419844,
+            "max": 10
+          },
+          "unit": "%",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9455121511632151
+        },
+        {
+          "device": "gpu",
+          "state": "prefill",
+          "metric": "utilization",
+          "value": {
+            "mean": 1.2513372778722958,
+            "max": 10
+          },
+          "unit": "%",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9432046591664832
+        }
+      ],
+      "device_phase_active_ratio": {
+        "gpu": {
+          "prefill": {
+            "value": 0.02227550319328975,
+            "unit": "ratio",
+            "source": "spans+events",
+            "status": "measured",
+            "reason": null
+          }
+        },
+        "npu0": {
+          "decode": {
+            "value": 0.8635225974390568,
+            "unit": "ratio",
+            "source": "spans+events",
+            "status": "measured",
+            "reason": null
+          },
+          "kv_transfer": {
+            "value": 0.05327005207701838,
+            "unit": "ratio",
+            "source": "spans+events",
+            "status": "measured",
+            "reason": null
+          },
+          "layout": {
+            "value": 0.041501880150411626,
+            "unit": "ratio",
+            "source": "spans+events",
+            "status": "measured",
+            "reason": null
+          }
+        },
+        "npu1": {}
+      }
+    },
+    "energy": {
+      "gpu": {
+        "energy_j": {
+          "value": 2526.9916813281434,
+          "unit": "J",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "energy_per_output_token_j_est": {
+          "value": 0.987106125518806,
+          "unit": "J/token",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "tok_per_s_per_w_est": {
+          "value": 1.0130622981135056,
+          "unit": "tokens/s/W",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        }
+      },
+      "npu0": {
+        "energy_j": {
+          "value": 1345.377494934611,
+          "unit": "J",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "energy_per_output_token_j_est": {
+          "value": 0.5255380839588324,
+          "unit": "J/token",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "tok_per_s_per_w_est": {
+          "value": 1.9028116715483063,
+          "unit": "tokens/s/W",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        }
+      },
+      "npu1": {
+        "energy_j": {
+          "value": 724.120475362916,
+          "unit": "J",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "energy_per_output_token_j_est": {
+          "value": 0.28285956068863904,
+          "unit": "J/token",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "tok_per_s_per_w_est": {
+          "value": 3.5353233158018003,
+          "unit": "tokens/s/W",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        }
+      },
+      "total": {
+        "energy_j": {
+          "value": 3872.369176262754,
+          "unit": "J",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "energy_per_output_token_j_est": {
+          "value": 1.5126442094776382,
+          "unit": "J/token",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        },
+        "tok_per_s_per_w_est": {
+          "value": 0.6610939927144732,
+          "unit": "tokens/s/W",
+          "source": "monitor/metrics.jsonl",
+          "status": "estimated",
+          "reason": null,
+          "coverage": 0.9454607506178734
+        }
+      }
+    },
+    "active_devices": [
+      "gpu",
+      "npu0"
+    ],
+    "memory_bandwidth": {
+      "gpu": {
+        "decode_mem_bw_gbps_est": {
+          "value": null,
+          "unit": "GB/s",
+          "source": "WP9",
+          "status": "not_collected",
+          "reason": "WP9에서 산출"
+        },
+        "mem_bw_efficiency_est": {
+          "value": null,
+          "unit": "ratio",
+          "source": "WP9",
+          "status": "not_collected",
+          "reason": "WP9에서 산출"
+        }
+      },
+      "npu0": {
+        "decode_mem_bw_gbps_est": {
+          "value": 168.9306613807946,
+          "unit": "GB/s",
+          "source": "model/config.json+safetensors+steps",
+          "status": "estimated",
+          "reason": "device 시간 없음: 호스트 관측 구간 기준 하한 추정",
+          "context_source": "step"
+        },
+        "mem_bw_efficiency_est": {
+          "value": 0.6598853960187289,
+          "unit": "ratio",
+          "source": "NPU_MEM_BW_GBPS",
+          "status": "estimated",
+          "reason": "device 시간 없음: 호스트 관측 구간 기준 하한 추정"
+        }
+      }
+    },
+    "other_seconds": {
+      "value": null,
+      "unit": "s",
+      "source": "M12",
+      "status": "not_collected",
+      "reason": "미구현(후속)"
+    }
+  }
+}

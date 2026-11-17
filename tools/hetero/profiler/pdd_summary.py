@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Render existing PDD analysis metrics without recomputing them."""
 
-import json
-
 
 def metrics(value, prefix=""):
     if isinstance(value, dict):
@@ -20,6 +18,108 @@ def metrics(value, prefix=""):
             yield from metrics(child, f"{prefix}[{index}]")
 
 
+def display(value):
+    return (
+        f"{value:.4g}"
+        if isinstance(value, (int, float))
+        else "unavailable"
+        if value is None
+        else str(value)
+    ).replace("|", "\\|")
+
+
+def table(headers, rows):
+    return [
+        "",
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ] + ["| " + " | ".join(map(display, row)) + " |" for row in rows]
+
+
+def folded(title, content):
+    return ["", f"<details><summary>{title}</summary>", "", *content, "", "</details>"]
+
+
+def key_results(data, config):
+    values = data.get("client", {}).get("summary", {})
+    get = lambda key: values.get(key, {}).get("value")
+    rows = lambda keys: [
+        (label, *(get(f"{key}_{s}_seconds") for s in ("mean", "p50", "p90")))
+        for key, label in keys
+    ]
+    lines = [
+        "",
+        "## Key results",
+        "",
+        "Send-based service timing (client queue excluded); seconds.",
+    ]
+    lines += table(
+        ("Metric", "Mean", "p50", "p90"),
+        rows(
+            [
+                ("service_ttft", "Service TTFT"),
+                ("service", "Service E2E"),
+                ("tpot", "TPOT"),
+            ]
+        ),
+    )
+    lines += table(
+        ("Metric", "Value"),
+        [
+            (k, get(k))
+            for k in (
+                "output_tokens_per_second",
+                "makespan_seconds",
+                "success_count",
+                "failure_count",
+                "incomplete_count",
+            )
+        ],
+    )
+    lines += [
+        "",
+        f"클라이언트 대기 포함(동시성 {config.get('CONCURRENCY', 'unknown')}, "
+        f"요청 {config.get('MEASURE_REQUESTS', 'unknown')}개 동시 도착)",
+    ]
+    lines += table(
+        ("Metric (s)", "Mean", "p50", "p90"),
+        rows([("ttft", "Client TTFT"), ("e2e", "Client E2E")]),
+    )
+    return lines + [""]
+
+
+def visible(data):
+    active = data.get("active_devices")
+    for name, node in metrics(data):
+        if name.startswith("transfer.prefill."):
+            continue
+        if name.startswith("energy."):
+            _, device, key = name.split(".", 2)
+            if (
+                active is not None
+                and device not in [*active, "total"]
+                and key != "energy_j"
+            ):
+                continue
+        yield name, node
+
+
+def metric_table(values):
+    rows = []
+    for name, node in metrics(values):
+        value = node.get("value")
+        for suffix, item in value.items() if isinstance(value, dict) else [("", value)]:
+            rows.append(
+                (
+                    name + ("." + suffix if suffix else ""),
+                    item,
+                    node["unit"],
+                    node["status"],
+                )
+            )
+    return table(("Metric", "Value", "Unit", "Status"), rows)
+
+
 def observed(data):
     lines = [
         "",
@@ -27,34 +127,81 @@ def observed(data):
         "",
         "Streaming synthetic tokens; not comparable to the legacy fixed prompt.",
     ]
-    sections = {
-        "Client": data.get("client", {}).get("summary", {}),
-        "Server stages (OTEL)": data.get("server", {}),
-        "KV Transfer / KV Load (H2D+transform)": data.get("transfer", {}),
-        "M14a": data.get("request_phase_share", {}).get("summary", {}),
-        "Device resources": data.get("phase_resources", {}),
-        "Energy": data.get("energy", {}),
-    }
-    lines += [f"Active devices (energy total): {data.get('active_devices', [])}"]
-    for title, values in sections.items():
-        lines += [
-            "",
-            f"### {title}",
-            "",
-            "| Metric | Value | Unit | Status |",
-            "| --- | --- | --- | --- |",
-        ]
-        for name, node in metrics(values):
-            value = json.dumps(node.get("value"), ensure_ascii=False).replace(
-                "|", "\\|"
+    for title, key in (
+        ("Server stages (OTEL)", "server"),
+        ("KV Transfer / KV Load (H2D+transform)", "transfer"),
+    ):
+        lines += ["", "### " + title]
+        for role, values in data.get(key, {}).items():
+            if key == "transfer" and role == "prefill":
+                continue
+            lines += ["", "#### " + role] + metric_table(
+                {k: v for k, v in values.items() if k not in ("requests", "boundaries")}
             )
-            lines.append(f"| {name} | {value} | {node['unit']} | {node['status']} |")
-    return lines
+            for field in ("requests", "boundaries"):
+                if values.get(field):
+                    lines += folded(role + " " + field, metric_table(values[field]))
+    lines += folded(
+        "Client request details",
+        metric_table(data.get("client", {}).get("requests", [])),
+    )
+    shares = data.get("request_phase_share", {}).get("summary", {}).get("value") or {}
+    lines += ["", "### M14a"] + table(
+        ("Phase", "Share (%)"), [(k, v * 100) for k, v in shares.items()]
+    )
+    lines += folded(
+        "M14a request details",
+        metric_table(data.get("request_phase_share", {}).get("requests", {})),
+    )
+    resources = data.get("phase_resources", {})
+    rows = [
+        (
+            r["device"],
+            r["state"],
+            r["metric"],
+            (r.get("value") or {}).get("mean"),
+            (r.get("value") or {}).get("max"),
+            r["unit"],
+        )
+        for r in resources.get("samples", [])
+    ]
+    lines += ["", "### Device resources"] + folded(
+        "Device resource details",
+        table(("device", "phase", "metric", "mean", "max", "unit"), rows)
+        + metric_table(resources.get("device_phase_active_ratio", {})),
+    )
+    lines += [
+        "",
+        "### Energy",
+        "",
+        "Inactive devices: energy only; token efficiency applies to active devices.",
+    ]
+    energy = {
+        name.removeprefix("energy."): node
+        for name, node in visible(data)
+        if name.startswith("energy.")
+    }
+    return lines + metric_table(energy)
+
+
+REASONS = {
+    "WP9에서 산출": "derived offline only",
+    "copy_ 동기 여부 미확인(H4)": (
+        "copy_ synchronization not verified; H2D bandwidth not reported"
+    ),
+    "전송 count 단위 미확인(H5)": "transfer counter granularity not verified",
+    "device_time_missing_or_exceeds_window(H4)": "device time missing or out of range",
+    "미구현(후속)": "this metric is not implemented",
+    "not_applicable": "not applicable to this configuration",
+    "zero_count": "no observations in the measurement interval",
+    "missing_raw": "required raw data is missing",
+    "이론치 미설정": "theoretical bandwidth is not configured",
+}
 
 
 def uncollected(data):
     return [
-        f"- {name}: {node.get('reason') or 'missing_raw'}"
-        for name, node in metrics(data)
+        f"- {name}: {REASONS.get(node.get('reason'), 'missing required data')}"
+        for name, node in visible(data)
         if node["status"] == "not_collected"
     ]
