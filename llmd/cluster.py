@@ -32,19 +32,12 @@ def render(cfg, eps, work, namespace):
             "cacheClaim",
             "runtimeClassName",
             "peerGpuVisibility",
-            "nodeSelector",
             "cpu",
             "memory",
         },
         set(),
         "cluster",
     )
-    placement = site.get("nodeSelector", {})
-    if not isinstance(placement, dict) or not all(
-        isinstance(k, str) and k and isinstance(v, str) and v
-        for k, v in placement.items()
-    ):
-        raise ValueError("cluster.nodeSelector requires nonempty string labels")
     images = IMAGES | cfg.get("images", {})
     name = "pdd-" + eps[0]["engine_id"][:10]
     selector = {"pdd.sota.dev/pool": name}
@@ -158,15 +151,7 @@ def render(cfg, eps, work, namespace):
         )
         if ep["node"] != "local":
             pod["nodeSelector"] = {"kubernetes.io/hostname": ep["node"]}
-        endpoint_selector = ep.get("nodeSelector", {})
-        if any(
-            k in endpoint_selector and endpoint_selector[k] != v
-            for k, v in pod.get("nodeSelector", {}).items()
-        ):
-            raise ValueError(
-                f"{eid}: nodeSelector conflicts with the endpoint hostname"
-            )
-        pod.setdefault("nodeSelector", {}).update(endpoint_selector)
+        pod.setdefault("nodeSelector", {}).update(ep.get("nodeSelector", {}))
         if any(
             p["backend"] == "rbln" and p["node"] == ep["node"] and p.get("peers")
             for p in eps
@@ -218,16 +203,6 @@ def render(cfg, eps, work, namespace):
     for resource in docs:
         resource["metadata"].setdefault("labels", {})["pdd.sota.dev/run"] = run_id
         if resource["kind"] == "Deployment":
-            spec = resource["spec"]["template"]["spec"]
-            pod_selector = spec.get("nodeSelector", {})
-            if any(
-                k in pod_selector and pod_selector[k] != v for k, v in placement.items()
-            ):
-                raise ValueError(
-                    "endpoint node selector conflicts with cluster.nodeSelector"
-                )
-            if placement:
-                spec["nodeSelector"] = placement | pod_selector
             resource["spec"]["template"]["metadata"].setdefault("labels", {})[
                 "pdd.sota.dev/run"
             ] = run_id
