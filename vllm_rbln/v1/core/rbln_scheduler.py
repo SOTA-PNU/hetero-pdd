@@ -33,6 +33,7 @@ from vllm.v1.utils import record_function_or_nullcontext
 
 import vllm_rbln.envs as envs
 from vllm_rbln.logger import init_logger
+from vllm_rbln.v1.core.lookahead import RemoteKVLookahead
 from vllm_rbln.v1.core.rbln_kv_cache_manager import (
     KVCacheCopyOp,
     RBLNKVCacheManager,
@@ -54,7 +55,7 @@ def is_prefill(request: Request) -> bool:
     return request.num_computed_tokens < request.num_tokens - 1
 
 
-class RBLNScheduler(Scheduler):
+class RBLNScheduler(RemoteKVLookahead, Scheduler):
     def __init__(
         self,
         *args,
@@ -113,6 +114,7 @@ class RBLNScheduler(Scheduler):
         # lifecycle hooks clear its pending delta before it can resume with
         # a full block table.
         self._pending_runner_block_deltas: dict[str, KVCacheBlocks] = {}
+        self._init_lookahead()
 
     def _add_pending_runner_block_delta(
         self,
@@ -148,6 +150,9 @@ class RBLNScheduler(Scheduler):
                 )
 
     def schedule(self) -> RBLNSchedulerOutput:
+        # Host completion promotion is independent of compute admission/slots.
+        self._lookahead_observe_ready()
+        self._lookahead_grant_import()
         # Copied from vllm.v1.core.sched.Scheduler.schedule: https://github.com/vllm-project/vllm/blob/v0.18.0/vllm/v1/core/sched/scheduler.py#L338-L927
         # The only differences are:
         # - Disable mixed batching
@@ -434,6 +439,14 @@ class RBLNScheduler(Scheduler):
                 request = request_queue.peek_request()
                 request_id = request.request_id
 
+                # Opt-in remote preparation has a separate no-compute pass,
+                # including when this compute loop has no slots or tokens.
+                if self._lookahead_fresh_remote(request):
+                    request_queue.pop_request()
+                    # prepend_requests below reverses this temporary queue.
+                    step_skipped_waiting.prepend_request(request)
+                    continue
+
                 # try to promote blocked statuses while traversing skipped queue.
                 if self._is_blocked_waiting_status(
                     request.status
@@ -642,6 +655,10 @@ class RBLNScheduler(Scheduler):
                 # a new prefill request only if there is enough KV cache space to
                 # accommodate the full token count. Therefore, we allocate based on
                 # request.num_tokens - num_computed_tokens, not num_new_tokens.
+                if not self._lookahead_admission_fits(request):
+                    request_queue.pop_request()
+                    step_skipped_waiting.prepend_request(request)
+                    continue
                 new_blocks = self.kv_cache_manager.allocate_slots(
                     request,
                     request.num_tokens - num_computed_tokens,
@@ -693,6 +710,8 @@ class RBLNScheduler(Scheduler):
 
                 request = request_queue.pop_request()
                 if load_kv_async:
+                    if self._lookahead is not None:
+                        self._lookahead["ordinary"].add(request_id)
                     # If loading async, allocate memory and put request
                     # into the WAITING_FOR_REMOTE_KV state.
                     request.status = RequestStatus.WAITING_FOR_REMOTE_KVS
@@ -734,6 +753,7 @@ class RBLNScheduler(Scheduler):
                 token_budget -= num_new_tokens
                 request.status = RequestStatus.RUNNING
                 request.num_computed_tokens = num_computed_tokens
+                self._lookahead_admitted(request)
                 # Encoder-related.
                 if encoder_inputs_to_schedule:
                     scheduled_encoder_inputs[request_id] = encoder_inputs_to_schedule
@@ -842,6 +862,9 @@ class RBLNScheduler(Scheduler):
 
                 scheduled_spec_decode_tokens.pop(req_id, None)
 
+        # Preparation does not contribute NewRequestData or compute tokens.
+        # Keep it before cache-zero metadata is drained and connector meta built.
+        self._prepare_lookahead_requests()
         # Check if the scheduling constraints are satisfied.
         total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
         assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
@@ -954,6 +977,7 @@ class RBLNScheduler(Scheduler):
             meta: KVConnectorMetadata = self.connector.build_connector_meta(
                 scheduler_output
             )
+            self._lookahead_worker_control(meta)
             scheduler_output.kv_connector_metadata = meta
 
         # Build the connector meta for ECConnector
@@ -973,6 +997,11 @@ class RBLNScheduler(Scheduler):
         # Preempted requests resume with full block tables, so pending deltas
         # from the previous running state are stale.
         self._pending_runner_block_deltas.pop(request.request_id, None)
+        self._lookahead_event(
+            "REQUEST_PREEMPTED",
+            request,
+            num_computed_tokens_before=request.num_computed_tokens,
+        )
         return super()._preempt_request(request, timestamp)
 
     def _free_request(
@@ -981,7 +1010,37 @@ class RBLNScheduler(Scheduler):
         # Drop any pending runner block delta; the request is finishing and will
         # never be scheduled again.
         self._pending_runner_block_deltas.pop(request.request_id, None)
+        if self._lookahead is not None:
+            self._lookahead_event(
+                "REQUEST_TERMINAL",
+                request,
+                status=request.status.name,
+                delayed_block_release=delay_free_blocks,
+                quarantined_pending_credit=(
+                    delay_free_blocks
+                    and request.request_id in self._lookahead["pending"]
+                ),
+            )
         return super()._free_request(request, delay_free_blocks)
+
+    def _free_blocks(self, request: Request):
+        # Upstream invokes this only at the true safe-release point, including
+        # delayed transfer completion after cancellation. Never release credit
+        # merely because the client HTTP task was canceled.
+        released_block_ids = (
+            self.kv_cache_manager.get_block_ids(request.request_id)
+            if self._lookahead is not None
+            else None
+        )
+        super()._free_blocks(request)
+        self._lookahead_free_blocks(request, released_block_ids)
+
+    def _try_promote_blocked_waiting_request(self, request: Request) -> bool:
+        was_receiving = request.status == RequestStatus.WAITING_FOR_REMOTE_KVS
+        promoted = super()._try_promote_blocked_waiting_request(request)
+        if was_receiving and promoted:
+            self._lookahead_promoted(request)
+        return promoted
 
     def update_from_output(
         self,
@@ -990,6 +1049,7 @@ class RBLNScheduler(Scheduler):
     ) -> dict[int, EngineCoreOutputs]:
         assert isinstance(scheduler_output, RBLNSchedulerOutput)
         result = super().update_from_output(scheduler_output, model_runner_output)
+        self._lookahead_counts()
 
         if isinstance(self.kv_cache_manager, RBLNKVCacheManager):
             # Now that execute_model has written KV data and

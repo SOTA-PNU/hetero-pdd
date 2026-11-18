@@ -1,27 +1,23 @@
-"""Native TP1 vLLM launch specifications for the local llm-d EPP."""
+"""Pinned vLLM backend launch and model/compile artifact provenance."""
 
 from __future__ import annotations
 
+import contextlib
 import csv
+import fcntl
+import hashlib
 import json
 import os
+import shutil
 import subprocess
+import uuid as uuidlib
 from pathlib import Path
-from types import SimpleNamespace
 
 from tools.hetero import orchestrate
 
+from .config import fingerprint
+
 ROOT = Path(__file__).resolve().parents[1]
-PRESETS = {
-    "qwen3-0.6b": {
-        "name": "Qwen/Qwen3-0.6B",
-        "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
-    },
-    "qwen3-1.7b": {
-        "name": "Qwen/Qwen3-1.7B",
-        "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
-    },
-}
 VERSIONS = {
     "gpu": {"vllm": "0.22.0", "torch": "2.11.0", "nixl": "1.4.1"},
     "npu": {
@@ -35,35 +31,51 @@ VERSIONS = {
 }
 
 
-def model_info(preset, engine):
-    model = PRESETS[preset]
+MODEL_IDENTITY = (
+    "name",
+    "revision",
+    "tokenizer",
+    "tokenizer_revision",
+    "tokenizer_sha256",
+    "tokenizer_config_sha256",
+    "config_sha256",
+    "weights_sha256",
+)
+
+
+def model_info(model, cfg):
     default = Path(os.getenv("HF_HOME", "~/.cache/huggingface")).expanduser() / "hub"
-    cache = Path(
-        engine.get("hub_cache") or os.getenv("HF_HUB_CACHE") or default
-    ).expanduser()
-    path = (
-        cache.absolute()
-        / ("models--" + model["name"].replace("/", "--"))
-        / "snapshots"
-        / model["revision"]
+    cache = (
+        Path(cfg.get("hub_cache") or os.getenv("HF_HUB_CACHE") or default)
+        .expanduser()
+        .absolute()
     )
-    return {**model, "path": str(path)}
+
+    def snapshot(key, revision):
+        return (
+            cache
+            / ("models--" + model[key].replace("/", "--"))
+            / "snapshots"
+            / model[revision]
+        )
+
+    path = Path(model.get("path") or snapshot("name", "revision"))
+    tok = Path(
+        model.get("tokenizer_path")
+        or (
+            path
+            if model["name"] == model["tokenizer"]
+            and model["revision"] == model["tokenizer_revision"]
+            else snapshot("tokenizer", "tokenizer_revision")
+        )
+    )
+    return {**model, "path": str(path), "tokenizer_path": str(tok)}
 
 
-def validate_settings(preset, endpoints, max_model_len):
-    if preset not in PRESETS:
-        raise ValueError(f"unknown model preset: {preset}")
-    if not 128 <= max_model_len <= 4096:
-        raise ValueError("supported TP1 FP16 context length is 128..4096")
-    for endpoint in endpoints:
-        if endpoint["kind"] == "npu" and endpoint["role"] not in {"full", "decode"}:
-            raise ValueError("RBLN supports full and decode roles")
-
-
-def _python(engine, kind):
+def _python(ep):
     return str(
         orchestrate.python_path(
-            engine.get(kind + "_python"), "CUDA_PY" if kind == "gpu" else "RBLN_PY"
+            ep["engine"].get("python"), "CUDA_PY" if ep["kind"] == "gpu" else "RBLN_PY"
         )
     )
 
@@ -87,22 +99,45 @@ def _snapshot(model):
             f"hf download {model['name']} --revision {model['revision']}"
         )
     config = json.loads((path / "config.json").read_text())
-    if config.get("architectures") != ["Qwen3ForCausalLM"] or config.get(
-        "quantization_config"
-    ):
-        raise ValueError(f"expected an unquantized Qwen3ForCausalLM at {path}")
-    files = ["tokenizer.json", "tokenizer_config.json"]
+    if not config.get("architectures"):
+        raise ValueError(f"{path}: missing model architecture")
+    tokenizer = Path(model["tokenizer_path"])
+    tokenizer_identity(tokenizer)
+    files = []
     index = path / "model.safetensors.index.json"
+    binary = path / "pytorch_model.bin"
+    if not index.exists() and not (path / "model.safetensors").exists():
+        index = path / "pytorch_model.bin.index.json"
     if index.exists():
         shards = set(json.loads(index.read_text())["weight_map"].values())
         if not shards:
             raise ValueError(f"empty weight index in {index}")
         files.extend(shards)
     else:
-        files.append("model.safetensors")
+        files.append("pytorch_model.bin" if binary.is_file() else "model.safetensors")
     for filename in files:
         if not (path / filename).is_file():
             raise ValueError(f"missing pinned model file {path / filename}")
+
+
+def tokenizer_identity(snapshot):
+    root = Path(snapshot)
+    if not (root / "tokenizer_config.json").is_file():
+        raise ValueError(f"missing tokenizer configuration at {root}")
+    fast = root / "tokenizer.json"
+    if fast.is_file():
+        return hashlib.sha256(fast.read_bytes()).hexdigest()
+    models = sorted(
+        {*root.glob("*.model"), *root.glob("vocab.*"), *root.glob("merges.txt")}
+    )
+    if not models:
+        raise ValueError(f"missing tokenizer vocabulary at {root}")
+    return fingerprint(
+        {
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in [*models, root / "tokenizer_config.json"]
+        }
+    )
 
 
 def _runtime_packages(python, kind, needs_transfer):
@@ -152,135 +187,257 @@ print("GPU-" + str(UUID(bytes=bytes(identity.bytes))))
     return _checked([python, "-c", probe], env=env)
 
 
-def preflight(preset, engine, endpoints):
-    model = model_info(preset, engine)
-    validate_settings(preset, endpoints, engine.get("max_model_len", 1024))
+def source_identity():
+    # Includes uncommitted engine/connector changes on development checkouts.
+    h = hashlib.sha256()
+    for file in sorted((ROOT / "vllm_rbln").rglob("*.py")):
+        h.update(str(file.relative_to(ROOT)).encode() + b"\0" + file.read_bytes())
+    return h.hexdigest()
+
+
+def preflight(model, endpoints, *, cluster=False):
     _snapshot(model)
-    packages = {}
-    details = {}
-    plugin = None
-    for endpoint in endpoints:
-        kind = endpoint["kind"]
-        index = endpoint["device"]
-        python = _python(engine, kind)
-        if kind not in packages:
-            needs_transfer = any(ep["role"] == "decode" for ep in endpoints)
-            packages[kind] = _runtime_packages(python, kind, needs_transfer)
-        if kind == "gpu":
-            raw = _checked(
-                [
-                    "nvidia-smi",
-                    "-i",
-                    str(index),
-                    "--query-gpu=name,uuid,pci.bus_id",
-                    "--format=csv,noheader",
-                ]
+    model_config = json.loads((Path(model["path"]) / "config.json").read_text())
+    model["architecture"] = model_config["architectures"]
+    model["tokenizer_sha256"] = tokenizer_identity(model["tokenizer_path"])
+    model["config_sha256"] = fingerprint(model_config)
+    model["tokenizer_config_sha256"] = hashlib.sha256(
+        (Path(model["tokenizer_path"]) / "tokenizer_config.json").read_bytes()
+    ).hexdigest()
+    if any("decode" in ep["roles"] and ep["backend"] == "rbln" for ep in endpoints):
+        text = model_config.get("text_config", model_config)
+        heads = text.get("num_attention_heads")
+        kv_heads = text.get("num_key_value_heads", heads)
+        layers = text.get("num_hidden_layers")
+        if not all(type(v) is int and v > 0 for v in (heads, kv_heads, layers)):
+            raise ValueError(
+                "RBLN host import needs known attention heads, KV heads and layer count"
             )
-            name, uuid, bus = next(csv.reader([raw], skipinitialspace=True))
-            visible = _cuda_uuid(python, index)
-            if visible.lower() != uuid.lower():
-                raise ValueError(
-                    f"GPU {index}: CUDA resolves to {visible}, nvidia-smi to {uuid}"
-                )
-            busy = _checked(
-                [
-                    "nvidia-smi",
-                    "-i",
-                    str(index),
-                    "--query-compute-apps=pid",
-                    "--format=csv,noheader",
-                ]
+        if (
+            text.get("quantization_config")
+            or text.get("use_sliding_window")
+            or any(t != "full_attention" for t in text.get("layer_types", []))
+            or text.get("is_encoder_decoder")
+            or text.get("kv_lora_rank")
+        ):
+            raise ValueError(
+                "RBLN host import requires dense unquantized decoder self-attention"
             )
-            if busy:
-                raise ValueError(f"GPU {index} already has a compute process ({busy})")
-        else:
-            if plugin is None:
-                plugin = {
-                    "source": str(ROOT / "vllm_rbln"),
-                    "git_tree": _checked(["git", "rev-parse", "HEAD:vllm_rbln"]),
-                    "modified": bool(
-                        _checked(["git", "status", "--porcelain", "--", "vllm_rbln"])
-                    ),
-                }
-            doc = json.loads(_checked(["rbln-smi", "--json"]))
-            device = next((d for d in doc["devices"] if d["npu"] == index), {})
-            if device.get("status") != "normal" or device.get("name") != "RBLN-CA22":
-                raise ValueError(f"NPU {index}: expected a ready RBLN-CA22")
-            if any(
-                str(c.get("npu", c.get("device", ""))) in {str(index), f"rbln{index}"}
-                for c in doc["contexts"]
-            ):
-                raise ValueError(f"NPU {index} already has a context")
-            name, uuid, bus = device["name"], device["uuid"], device["pci"]["bus_id"]
-        details[endpoint["id"]] = {
-            "python": python,
-            "packages": packages[kind],
-            "name": name,
-            "index": index,
-            "uuid": uuid,
-            "pci_bus": bus,
+        model["kv_geometry"] = {
+            "kv_heads": kv_heads,
+            "layers": layers,
+            "head_dim": text.get("head_dim") or text["hidden_size"] // heads,
         }
+    # Verify loaded weight bytes, including snapshots on separate cluster mounts.
+    digest = hashlib.sha256()
+    for segment in sorted(
+        [
+            *Path(model["path"]).glob("*.safetensors"),
+            *Path(model["path"]).glob("pytorch_model*.bin"),
+        ]
+    ):
+        with segment.open("rb") as stream:
+            for data in iter(lambda: stream.read(8 << 20), b""):
+                digest.update(data)
+    model["weights_sha256"] = digest.hexdigest()
+    details, packages = {}, {}
+    for ep in endpoints:
+        python, kind = _python(ep), ep["kind"]
+        signature = (python, kind, "decode" in ep["roles"])
+        if signature not in packages:
+            packages[signature] = _runtime_packages(*signature)
+        devices = []
         if kind == "npu":
-            details[endpoint["id"]].update(
-                rbln_plugin=plugin, kmd=doc["KMD_version"], firmware=device["fw_ver"]
+            doc = json.loads(_checked(["rbln-smi", "--json"]))
+        for index in ep["devices"]:
+            if kind == "gpu":
+                raw = _checked(
+                    [
+                        "nvidia-smi",
+                        "-i",
+                        str(index),
+                        "--query-gpu=name,uuid,pci.bus_id,driver_version",
+                        "--format=csv,noheader",
+                    ]
+                )
+                name, uid, bus, version = next(csv.reader([raw], skipinitialspace=True))
+                if _cuda_uuid(python, index).lower() != uid.lower():
+                    raise ValueError(
+                        f"CUDA ordinal {index} does not resolve to NVML UUID {uid}"
+                    )
+                if not cluster and _checked(
+                    [
+                        "nvidia-smi",
+                        "-i",
+                        str(index),
+                        "--query-compute-apps=pid",
+                        "--format=csv,noheader",
+                    ]
+                ):
+                    raise ValueError(f"GPU {index} already has a compute process")
+            else:
+                d = next((d for d in doc["devices"] if d["npu"] == index), {})
+                if d.get("status") != "normal":
+                    raise ValueError(f"RBLN device {index} missing or unhealthy")
+                if any(
+                    str(c.get("npu", c.get("device", "")))
+                    in {str(index), f"rbln{index}"}
+                    for c in doc["contexts"]
+                ):
+                    raise ValueError(f"RBLN device {index} already has a context")
+                name, uid, bus, version = (
+                    d["name"],
+                    d["uuid"],
+                    d["pci"]["bus_id"],
+                    [doc["KMD_version"], d["fw_ver"]],
+                )
+            devices.append(
+                dict(index=index, name=name, uuid=uid, pci_bus=bus, driver=version)
             )
-    return {"model_path": model["path"], "endpoints": details}
+        details[ep["id"]] = dict(
+            python=python,
+            packages=packages[signature],
+            devices=devices,
+            plugin_sha256=source_identity() if kind == "npu" else None,
+        )
+    return details
 
 
-def engine_spec(
-    preset, engine, endpoint, *, run_dir, run_id, cuda_device, instrumentation=None
-):
-    kind, role, name = endpoint["kind"], endpoint["role"], endpoint["id"]
-    is_gpu = kind == "gpu"
-    python = _python(engine, kind)
-    model = model_info(preset, engine)
-    run_dir = Path(run_dir).absolute()
-    # Never open a compile artifact belonging to another launch/model/revision.
-    cache = run_dir / "cache" / name
-    context = engine.get("max_model_len", 1024)
-    # vLLM reserves its null block; leave a full context's worth available.
-    num_blocks = max(32, (context + 127) // 128 + 1)
-    options = SimpleNamespace(
-        model_path=model["path"],
-        model_name=model["name"],
-        dtype="float16",
-        kv_cache_dtype="float16",
-        max_model_len=context,
-        max_num_batched_tokens=128,
-        max_num_seqs=1,
-        block_size=128,
-        num_blocks=num_blocks,
+@contextlib.contextmanager
+def compilation_cache(root, model, ep, hardware):
+    """Publish a compatible generation after model readiness."""
+    contract = {
+        "format": 1,
+        "model": model,
+        "engine": ep["engine"],
+        "backend": ep["backend"],
+        "node": ep["node"],
+        "roles": ep["roles"],
+        "runtime": hardware,
+        "environment": {
+            key: os.environ.get(key)
+            for key in ("CUDA_HOME", "LD_LIBRARY_PATH", "LIBRARY_PATH", "CC", "CXX")
+        },
+    }
+    key = fingerprint(contract)
+    base = Path(root).expanduser().resolve() / key
+    base.mkdir(parents=True, exist_ok=True)
+    with (base / "lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        metadata = base / "ready.json"
+        if metadata.exists():
+            saved = json.loads(metadata.read_text())
+            if saved["contract"] != contract or not re_full_generation(
+                saved["generation"]
+            ):
+                raise ValueError(f"invalid compile manifest at {metadata}")
+            cache = base / saved["generation"]
+            if not cache.is_dir():
+                raise ValueError(f"missing compiled generation {cache}")
+            reused = True
+        else:
+            cache = base / uuidlib.uuid4().hex
+            cache.mkdir()
+            reused = False
+
+        def ready():
+            if not reused:
+                from .runtime import save
+
+                save(metadata, {"contract": contract, "generation": cache.name})
+
+        try:
+            yield (
+                cache,
+                {"key": key, "reused": reused, "manifest": str(metadata)},
+                ready,
+            )
+        finally:
+            if not reused and not metadata.exists():
+                shutil.rmtree(cache, ignore_errors=True)
+
+
+def re_full_generation(name):
+    return (
+        isinstance(name, str)
+        and len(name) == 32
+        and all(c in "0123456789abcdef" for c in name)
     )
+
+
+def engine_spec(model, ep, *, work, engine_id, cache, peer_devices, instrumentation):
+    opts, kind = ep["engine"], ep["kind"]
+    gpu = kind == "gpu"
+    python = _python(ep)
     argv = [
         python,
         "-m",
         "vllm.entrypoints.cli.main",
         "serve",
-        *orchestrate.common_server_args(options, endpoint["port"]),
+        model["path"],
+        "--served-model-name",
+        model["name"],
+        "--tokenizer",
+        model["tokenizer_path"],
+        "--host",
+        ep["host"],
+        "--port",
+        str(ep["port"]),
+        "--dtype",
+        opts["dtype"],
+        "--kv-cache-dtype",
+        opts["kv_dtype"],
+        "--tensor-parallel-size",
+        str(opts["tp"]),
+        "--pipeline-parallel-size",
+        str(opts["pp"]),
+        "--data-parallel-size",
+        str(opts["dp"]),
+        "--max-model-len",
+        str(opts["max_model_len"]),
+        "--max-num-batched-tokens",
+        str(opts["max_num_batched_tokens"]),
+        "--max-num-seqs",
+        str(opts["max_num_seqs"]),
+        "--block-size",
+        str(opts["block_size"]),
+        "--num-gpu-blocks-override",
+        str(opts["num_blocks"]),
+        "--enable-chunked-prefill",
+        "--no-enable-prefix-caching",
+        "--seed",
+        "0",
+        "--generation-config",
+        "vllm",
         "--enable-request-id-headers",
     ]
-    env = orchestrate.clean_base_env()
-    # Clear inherited vLLM backend and cache settings.
-    env = {k: v for k, v in env.items() if not k.startswith("VLLM_")}
+    if opts.get("compile_options"):
+        argv.extend(["--compilation-config", json.dumps(opts["compile_options"])])
+    argv.extend(opts.get("extra_args", []))
+    devices = ",".join(map(str, ep["devices"]))
+    env = {
+        k: v
+        for k, v in orchestrate.clean_base_env().items()
+        if not k.startswith("VLLM_")
+    }
     env.update(
         PYTHONPATH=str(ROOT),
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
         CUDA_DEVICE_ORDER="PCI_BUS_ID",
-        CUDA_VISIBLE_DEVICES=str(cuda_device) if is_gpu else "",
+        CUDA_VISIBLE_DEVICES=devices if gpu else ",".join(map(str, peer_devices)),
         VLLM_CACHE_ROOT=str(cache),
         TORCHINDUCTOR_CACHE_DIR=str(cache / "inductor"),
         TRITON_CACHE_DIR=str(cache / "triton"),
         PATH=f"{Path(python).parent}{os.pathsep}{env['PATH']}",
+        VLLM_KV_CACHE_LAYOUT=opts["layout"],
     )
-    engine_id = f"{run_id}-{name}"
-    if is_gpu:
+    if gpu:
         env["VLLM_USE_FLASHINFER_SAMPLER"] = "0"
     else:
-        offload = cache / "offload"
-        offload.mkdir(parents=True, exist_ok=True)
+        offload = work / "offload" / ep["id"]
         env.update(
-            RBLN_DEVICES=str(endpoint["device"]),
+            RBLN_DEVICES=devices,
             RBLN_OFFLOAD_DIR=str(offload),
             VLLM_RBLN_USE_VLLM_MODEL="1",
             VLLM_RBLN_USE_DEVICE_TENSOR="1",
@@ -289,37 +446,40 @@ def engine_spec(
             VLLM_RBLN_SAMPLER="0",
             VLLM_RBLN_PDD_LAYOUT_REORDER="0",
             RBLN_USE_CUSTOM_KERNEL="0",
-            RBLN_ROOT_IP="127.0.0.1",
-            RBLN_LOCAL_IP="127.0.0.1",
+            RBLN_ROOT_IP=ep["host"],
+            RBLN_LOCAL_IP=ep["host"],
         )
-    if role in ("prefill", "decode"):
+    if "prefill" in ep["roles"] or "decode" in ep["roles"]:
+        extra = {"kv_recompute_threshold": 0}
+        if "lookahead" in opts:
+            extra["rbln_lookahead"] = {
+                **opts["lookahead"],
+                "events_path": str(work / f"{ep['id']}-admission.jsonl"),
+            }
         connector = {
-            "kv_connector": "NixlConnector" if is_gpu else "RblnNixlConnector",
-            "kv_role": "kv_producer" if is_gpu else "kv_consumer",
-            "kv_buffer_device": "cuda" if is_gpu else "cpu",
+            "kv_connector": "NixlConnector" if gpu else "RblnNixlConnector",
+            "kv_role": "kv_producer" if "prefill" in ep["roles"] else "kv_consumer",
+            "kv_buffer_device": "cuda" if gpu else "cpu",
             "kv_load_failure_policy": "fail",
             "engine_id": engine_id,
-            "kv_connector_extra_config": {"kv_recompute_threshold": 0},
+            "kv_connector_extra_config": extra,
         }
-        argv += ["--kv-transfer-config", json.dumps(connector)]
+        argv.extend(["--kv-transfer-config", json.dumps(connector)])
         env.update(
-            VLLM_KV_CACHE_LAYOUT="HND",
             UCX_NET_DEVICES="all",
-            VLLM_NIXL_SIDE_CHANNEL_HOST="127.0.0.1",
-            VLLM_NIXL_SIDE_CHANNEL_PORT=str(endpoint["kv_port"]),
+            VLLM_NIXL_SIDE_CHANNEL_HOST=ep["host"],
+            VLLM_NIXL_SIDE_CHANNEL_PORT=str(ep["kv_port"]),
         )
-        if (
-            not is_gpu
-        ):  # UCX needs to see the source VRAM; the receiver stages in host DRAM.
-            env["CUDA_VISIBLE_DEVICES"] = str(cuda_device)
-    instrumentation = instrumentation or {}
     if trace := instrumentation.get("otlp_endpoint"):
         argv += ["--otlp-traces-endpoint", trace]
         env.update(
-            OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf", OTEL_SERVICE_NAME=name
+            OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf",
+            OTEL_SERVICE_NAME=ep["id"],
         )
-    if not is_gpu and instrumentation.get("rbln_events"):
-        events = run_dir / "events" / name
-        events.mkdir(parents=True, exist_ok=True)
-        env.update(VLLM_RBLN_METRICS="1", VLLM_RBLN_METRICS_DIR=str(events))
-    return {"argv": argv, "env": env, "engine_id": engine_id}
+    if not gpu and (instrumentation.get("rbln_events") or "lookahead" in opts):
+        env.update(
+            VLLM_RBLN_METRICS="1", VLLM_RBLN_METRICS_DIR=str(work / "events" / ep["id"])
+        )
+    if "lookahead" in opts:
+        env["PROMETHEUS_MULTIPROC_DIR"] = str(work / "prom" / ep["id"])
+    return {"argv": argv, "env": env}

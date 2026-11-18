@@ -1,0 +1,1067 @@
+{
+  "date": "2026-11-18",
+  "system": "Envoy -> official llm-d ext_proc EPP -> official PD sidecar -> vLLM",
+  "versions": {
+    "llm_d": "v1.0.0",
+    "router": "v1.0.0",
+    "llm_d_commit": "378b42d18dabe0b9c4ced4e6f3670d93b52db08e",
+    "router_commit": "b9393d1a9f1d5a72ecd86f8d2b643ab54c2a9b92",
+    "gie": "v1.6.2"
+  },
+  "oci_images": [
+    {
+      "name": "hetero-pdd/epp:v1",
+      "manifest_digest": "sha256:b507105dc62b22f91ab61b810becc52cb162b5954346e2c710dc9d09518038a5",
+      "binary_sha256": "71f567ac93f0a7d249ea2068c19a55113028ce78fbec77831e6979b1a156b0dc",
+      "verified_same_native_and_image_binary": true
+    },
+    {
+      "name": "hetero-pdd/pd-sidecar:v1",
+      "manifest_digest": "sha256:af3dcdb3ab6018ac888b670d9d3bd2c0ed077c86d908974a746ff2620020b7e3",
+      "binary_sha256": "c8fba5feb0962d4d6f44843cf2fa31608af2018eeb0f2213ad8cfc9158929dbb",
+      "verified_same_native_and_image_binary": true
+    }
+  ],
+  "hardware": [
+    {
+      "id": "gpu0",
+      "roles": [
+        "prefill",
+        "full"
+      ],
+      "runtime": {
+        "python": "/home/jiwon_lee/.venvs/official0111-cuda-20260903-121127/bin/python",
+        "packages": {
+          "vllm": "0.22.0",
+          "torch": "2.11.0",
+          "nixl": "1.4.1"
+        },
+        "devices": [
+          {
+            "index": 0,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "uuid": "GPU-3bfcb8e6-d98d-00e9-6a2a-3b04c61792a3",
+            "pci_bus": "00000000:70:00.0",
+            "driver": "580.105.08"
+          }
+        ],
+        "plugin_sha256": null
+      }
+    },
+    {
+      "id": "npu0",
+      "roles": [
+        "decode",
+        "full"
+      ],
+      "runtime": {
+        "python": "/home/jiwon_lee/.venvs/official0111-rbln-20260903-121127/bin/python",
+        "packages": {
+          "vllm": "0.22.0+cpu",
+          "torch": "2.11.0+cpu",
+          "nixl": "1.4.1",
+          "optimum-rbln": "0.11.1",
+          "torch-rbln": "0.3.0",
+          "rebel-compiler": "0.11.1.post2.dev2+g2995098f.prod"
+        },
+        "devices": [
+          {
+            "index": 0,
+            "name": "RBLN-CA22",
+            "uuid": "bc133fcd-240a-473d-b194-8db986cdeb53",
+            "pci_bus": "0000:34:00.0",
+            "driver": [
+              "3.2.2",
+              "3.2.2"
+            ]
+          }
+        ],
+        "plugin_sha256": "6802dbf1a19790625daebeb035b6a2662feeda4ab9af0d5385fb9c0b72e2e863"
+      }
+    }
+  ],
+  "model_verification": [
+    {
+      "source": "q2-pdd/verification.json",
+      "run_id": "608add3d4d124d37b3cde91ba0b5167c",
+      "reference_run": "f73719fc573247a4aabaf4319dfd4031",
+      "model": {
+        "name": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "architecture": [
+          "Qwen2ForCausalLM"
+        ],
+        "tokenizer": "Qwen/Qwen2.5-0.5B",
+        "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "tokenizer_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "correctness": "passed",
+      "smoke": "passed",
+      "transfer": "passed",
+      "nixl_bytes_delta_by_decoder": {
+        "npu0": 3145728.0
+      },
+      "nixl_transfer_count_delta_by_decoder": {
+        "npu0": 2.0
+      },
+      "requests": [
+        {
+          "request_id": "54ec43ec-286d-4f79-9058-aa46a81d36b7",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "08648f9e-b412-4756-8965-d6e2e31d80e5",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-54ec43ec-286d-4f79-9058-aa46a81d36b7-0-93ebd759",
+          "remote_engine_id": "608add3d4d124d37b3cde91ba0b5167c-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-54ec43ec-286d-4f79-9058-aa46a81d36b7-0-8e1f9ba1",
+            "remote_blocks": [
+              [
+                1
+              ]
+            ],
+            "local_blocks": [
+              [
+                1
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 11026693
+          },
+          "token_ids": [
+            13,
+            220,
+            576,
+            3974,
+            13876,
+            38835,
+            7822,
+            264
+          ],
+          "input_count": 128,
+          "reference_request": "d864e746-2e2c-4dfb-b8cb-ff7d4801d1f7"
+        },
+        {
+          "request_id": "0d77c93f-5f0b-4bb5-a46d-1bca77104e80",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "90a6d792-6d42-47c4-8dc6-38206322a64b",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-0d77c93f-5f0b-4bb5-a46d-1bca77104e80-0-b067a9f5",
+          "remote_engine_id": "608add3d4d124d37b3cde91ba0b5167c-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-0d77c93f-5f0b-4bb5-a46d-1bca77104e80-0-8c98ec9a",
+            "remote_blocks": [
+              [
+                2
+              ]
+            ],
+            "local_blocks": [
+              [
+                3
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 10430225
+          },
+          "token_ids": [
+            13876,
+            38835,
+            7822,
+            264,
+            2155,
+            5942,
+            5068,
+            21930
+          ],
+          "input_count": 128,
+          "reference_request": "0e91443f-2cbc-4a48-8d07-e9df86873a9e"
+        }
+      ]
+    },
+    {
+      "source": "q2-pool-1p2d/first-decoder.json",
+      "run_id": "281e11f7217c40a9b65fd36b1f2f139b",
+      "reference_run": "f73719fc573247a4aabaf4319dfd4031",
+      "model": {
+        "name": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "architecture": [
+          "Qwen2ForCausalLM"
+        ],
+        "tokenizer": "Qwen/Qwen2.5-0.5B",
+        "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "tokenizer_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "correctness": "passed",
+      "smoke": "passed",
+      "transfer": "passed",
+      "nixl_bytes_delta_by_decoder": {
+        "npu0": 3145728.0
+      },
+      "nixl_transfer_count_delta_by_decoder": {
+        "npu0": 2.0
+      },
+      "requests": [
+        {
+          "request_id": "490a438b-7bf5-417d-8a53-fc818cd9a589",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "d3fbfb50-2349-45bb-b6ce-eb0d7c62dc93",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-490a438b-7bf5-417d-8a53-fc818cd9a589-0-aa06b95d",
+          "remote_engine_id": "281e11f7217c40a9b65fd36b1f2f139b-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-490a438b-7bf5-417d-8a53-fc818cd9a589-0-980a750d",
+            "remote_blocks": [
+              [
+                1
+              ]
+            ],
+            "local_blocks": [
+              [
+                1
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 10551272
+          },
+          "token_ids": [
+            13,
+            220,
+            576,
+            3974,
+            13876,
+            38835,
+            7822,
+            264
+          ],
+          "input_count": 128,
+          "reference_request": "d864e746-2e2c-4dfb-b8cb-ff7d4801d1f7"
+        },
+        {
+          "request_id": "7469f5a3-374a-4bea-9db8-865dd87d477f",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "b727b6fb-61a3-4eb3-9cec-21284da63c0c",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-7469f5a3-374a-4bea-9db8-865dd87d477f-0-94b25ba0",
+          "remote_engine_id": "281e11f7217c40a9b65fd36b1f2f139b-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-7469f5a3-374a-4bea-9db8-865dd87d477f-0-a9fda09e",
+            "remote_blocks": [
+              [
+                2
+              ]
+            ],
+            "local_blocks": [
+              [
+                3
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 10082506
+          },
+          "token_ids": [
+            13876,
+            38835,
+            7822,
+            264,
+            2155,
+            5942,
+            5068,
+            21930
+          ],
+          "input_count": 128,
+          "reference_request": "0e91443f-2cbc-4a48-8d07-e9df86873a9e"
+        }
+      ]
+    },
+    {
+      "source": "q2-pool-1p2d/second-decoder.json",
+      "run_id": "281e11f7217c40a9b65fd36b1f2f139b",
+      "reference_run": "f73719fc573247a4aabaf4319dfd4031",
+      "model": {
+        "name": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "architecture": [
+          "Qwen2ForCausalLM"
+        ],
+        "tokenizer": "Qwen/Qwen2.5-0.5B",
+        "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "tokenizer_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      "correctness": "passed",
+      "smoke": "passed",
+      "transfer": "passed",
+      "nixl_bytes_delta_by_decoder": {
+        "npu1": 3145728.0
+      },
+      "nixl_transfer_count_delta_by_decoder": {
+        "npu1": 2.0
+      },
+      "requests": [
+        {
+          "request_id": "bdc52bc3-93a9-4a32-b19a-4517b26c0b64",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "e1270520-cedd-448f-acfa-fcecbbdaeef3",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu1",
+          "remote_request_id": "cmpl-bdc52bc3-93a9-4a32-b19a-4517b26c0b64-0-99a128c2",
+          "remote_engine_id": "281e11f7217c40a9b65fd36b1f2f139b-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-bdc52bc3-93a9-4a32-b19a-4517b26c0b64-0-9db9d07b",
+            "remote_blocks": [
+              [
+                3
+              ]
+            ],
+            "local_blocks": [
+              [
+                1
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 10458453
+          },
+          "token_ids": [
+            13,
+            220,
+            576,
+            3974,
+            13876,
+            38835,
+            7822,
+            264
+          ],
+          "input_count": 128,
+          "reference_request": "d864e746-2e2c-4dfb-b8cb-ff7d4801d1f7"
+        },
+        {
+          "request_id": "1b9b0bf8-99bd-449f-9b08-6a65be706738",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "082d6bac-3a89-49be-a810-6bc7d2bce632",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu1",
+          "remote_request_id": "cmpl-1b9b0bf8-99bd-449f-9b08-6a65be706738-0-89833644",
+          "remote_engine_id": "281e11f7217c40a9b65fd36b1f2f139b-gpu0",
+          "blocks": 1,
+          "worker_import": {
+            "consumer_request": "cmpl-1b9b0bf8-99bd-449f-9b08-6a65be706738-0-81caba10",
+            "remote_blocks": [
+              [
+                4
+              ]
+            ],
+            "local_blocks": [
+              [
+                3
+              ]
+            ],
+            "imported_blocks": 1,
+            "bytes_est": 1572864,
+            "h2d_ns": 9449376
+          },
+          "token_ids": [
+            13876,
+            38835,
+            7822,
+            264,
+            2155,
+            5942,
+            5068,
+            21930
+          ],
+          "input_count": 128,
+          "reference_request": "0e91443f-2cbc-4a48-8d07-e9df86873a9e"
+        }
+      ]
+    },
+    {
+      "source": "q2-257-fixed/verification.json",
+      "run_id": "ce15cc62a4434bbc8eff8c7a0327bd65",
+      "reference_run": "16fae5d2205844b593988e78b82d1d83",
+      "model": {
+        "name": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "architecture": [
+          "Qwen2ForCausalLM"
+        ],
+        "tokenizer": "Qwen/Qwen2.5-0.5B",
+        "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "tokenizer_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "weights_sha256": "88c142557820ccad55bb59756bfcfcf891de9cc6202816bd346445188a0ed342"
+      },
+      "correctness": "passed",
+      "smoke": "passed",
+      "transfer": "passed",
+      "nixl_bytes_delta_by_decoder": {
+        "npu0": 9437184.0
+      },
+      "nixl_transfer_count_delta_by_decoder": {
+        "npu0": 2.0
+      },
+      "requests": [
+        {
+          "request_id": "867d4e8c-d010-490c-aa0a-69c2f92cefc5",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "06be444f-da47-40ae-a394-3e3e8313e43c",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-867d4e8c-d010-490c-aa0a-69c2f92cefc5-0-a449c5ea",
+          "remote_engine_id": "ce15cc62a4434bbc8eff8c7a0327bd65-gpu0",
+          "blocks": 3,
+          "worker_import": {
+            "consumer_request": "cmpl-867d4e8c-d010-490c-aa0a-69c2f92cefc5-0-86bead7e",
+            "remote_blocks": [
+              [
+                1,
+                2,
+                3
+              ]
+            ],
+            "local_blocks": [
+              [
+                1,
+                2,
+                3
+              ]
+            ],
+            "imported_blocks": 3,
+            "bytes_est": 4718592,
+            "h2d_ns": 23395478
+          },
+          "token_ids": [
+            2155,
+            5942,
+            5068,
+            21930,
+            13,
+            220,
+            576,
+            3974
+          ],
+          "input_count": 257,
+          "reference_request": "84e656f3-e344-4ed5-a947-29803148c4b0"
+        },
+        {
+          "request_id": "2d28997f-5e6e-4f83-a32b-5eb4c5e681f0",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "288aef97-634f-42e8-bbaf-d97dd1e7bf88",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-2d28997f-5e6e-4f83-a32b-5eb4c5e681f0-0-8af69de4",
+          "remote_engine_id": "ce15cc62a4434bbc8eff8c7a0327bd65-gpu0",
+          "blocks": 3,
+          "worker_import": {
+            "consumer_request": "cmpl-2d28997f-5e6e-4f83-a32b-5eb4c5e681f0-0-aaa301d1",
+            "remote_blocks": [
+              [
+                4,
+                5,
+                6
+              ]
+            ],
+            "local_blocks": [
+              [
+                4,
+                5,
+                6
+              ]
+            ],
+            "imported_blocks": 3,
+            "bytes_est": 4718592,
+            "h2d_ns": 19501122
+          },
+          "token_ids": [
+            21930,
+            13,
+            220,
+            576,
+            3974,
+            13876,
+            38835,
+            2155
+          ],
+          "input_count": 257,
+          "reference_request": "7587f7da-282b-4ef1-a689-97d1801a391b"
+        }
+      ]
+    },
+    {
+      "source": "q2-257-warm/verification.json",
+      "run_id": "b404df6eb3f54f4a84828c390240f03d",
+      "reference_run": "16fae5d2205844b593988e78b82d1d83",
+      "model": {
+        "name": "Qwen/Qwen2.5-0.5B",
+        "revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "architecture": [
+          "Qwen2ForCausalLM"
+        ],
+        "tokenizer": "Qwen/Qwen2.5-0.5B",
+        "tokenizer_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+        "tokenizer_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+        "weights_sha256": "88c142557820ccad55bb59756bfcfcf891de9cc6202816bd346445188a0ed342"
+      },
+      "correctness": "passed",
+      "smoke": "passed",
+      "transfer": "passed",
+      "nixl_bytes_delta_by_decoder": {
+        "npu0": 9437184.0
+      },
+      "nixl_transfer_count_delta_by_decoder": {
+        "npu0": 2.0
+      },
+      "requests": [
+        {
+          "request_id": "fbf13436-487c-477c-9b0e-f5981fa666d0",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "b774ed49-afed-4ff2-9a50-8c81be651010",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-fbf13436-487c-477c-9b0e-f5981fa666d0-0-91548044",
+          "remote_engine_id": "b404df6eb3f54f4a84828c390240f03d-gpu0",
+          "blocks": 3,
+          "worker_import": {
+            "consumer_request": "cmpl-fbf13436-487c-477c-9b0e-f5981fa666d0-0-b6a71264",
+            "remote_blocks": [
+              [
+                1,
+                2,
+                3
+              ]
+            ],
+            "local_blocks": [
+              [
+                1,
+                2,
+                3
+              ]
+            ],
+            "imported_blocks": 3,
+            "bytes_est": 4718592,
+            "h2d_ns": 24139561
+          },
+          "token_ids": [
+            2155,
+            5942,
+            5068,
+            21930,
+            13,
+            220,
+            576,
+            3974
+          ],
+          "input_count": 257,
+          "reference_request": "84e656f3-e344-4ed5-a947-29803148c4b0"
+        },
+        {
+          "request_id": "d90ee3ce-b739-471c-9c25-13d952d11037",
+          "policy": "fixed-pdd",
+          "reason": "compatible_pair_weighted_score",
+          "epp_request_id": "91ce6d23-b5a8-433c-a168-4cc9f3e939f5",
+          "path": "pdd",
+          "prefill": "gpu0",
+          "target": "npu0",
+          "remote_request_id": "cmpl-d90ee3ce-b739-471c-9c25-13d952d11037-0-a3c072d9",
+          "remote_engine_id": "b404df6eb3f54f4a84828c390240f03d-gpu0",
+          "blocks": 3,
+          "worker_import": {
+            "consumer_request": "cmpl-d90ee3ce-b739-471c-9c25-13d952d11037-0-b5b6748d",
+            "remote_blocks": [
+              [
+                4,
+                5,
+                6
+              ]
+            ],
+            "local_blocks": [
+              [
+                4,
+                5,
+                6
+              ]
+            ],
+            "imported_blocks": 3,
+            "bytes_est": 4718592,
+            "h2d_ns": 22125597
+          },
+          "token_ids": [
+            21930,
+            13,
+            220,
+            576,
+            3974,
+            13876,
+            38835,
+            2155
+          ],
+          "input_count": 257,
+          "reference_request": "7587f7da-282b-4ef1-a689-97d1801a391b"
+        }
+      ]
+    }
+  ],
+  "policy_processes": [
+    {
+      "policy": "baseline",
+      "requests": 5,
+      "status": "passed"
+    },
+    {
+      "policy": "greedy",
+      "requests": 5,
+      "status": "passed"
+    },
+    {
+      "policy": "round-robin",
+      "requests": 4,
+      "status": "passed"
+    },
+    {
+      "policy": "least-queue",
+      "requests": 3,
+      "status": "passed"
+    },
+    {
+      "policy": "fixed-pdd",
+      "requests": 1,
+      "status": "passed"
+    },
+    {
+      "policy": "selective",
+      "requests": 2,
+      "status": "passed"
+    },
+    {
+      "policy": "tiktok",
+      "requests": 2,
+      "status": "passed"
+    },
+    {
+      "policy": "example-weighted",
+      "requests": 1,
+      "status": "passed"
+    },
+    {
+      "policy": "example-weighted",
+      "requests": 1,
+      "status": "passed"
+    },
+    {
+      "policy": "trace-allocation",
+      "requests": 4,
+      "status": "passed"
+    }
+  ],
+  "strict_2p2d": [
+    {
+      "case": "pair",
+      "http_status": 200,
+      "request_id": "250b2b04-56fc-490f-bb0a-4a9d402657df",
+      "visited": [
+        "p0",
+        "d0"
+      ]
+    },
+    {
+      "case": "reloaded-pair",
+      "http_status": 200,
+      "request_id": "fb6e613a-db32-4269-beb4-3f6b5c1f24f8",
+      "visited": [
+        "p1",
+        "d1"
+      ]
+    },
+    {
+      "case": "reject-prompt_ids",
+      "http_status": 502,
+      "request_id": "3dd06b76-5ccb-4761-8aac-591077f16b76",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-no_handle",
+      "http_status": 502,
+      "request_id": "8f1605a2-3635-4226-8887-7290045aaf74",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_engine_id",
+      "http_status": 502,
+      "request_id": "6579eeea-198f-4c46-bad0-ebd2943a701c",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_host",
+      "http_status": 502,
+      "request_id": "f04165fe-bc44-4e6b-af25-427f72bf2b72",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_port",
+      "http_status": 502,
+      "request_id": "f75b1691-015f-4e6d-8e73-6ec6542a3057",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_request_id",
+      "http_status": 502,
+      "request_id": "dc3d628f-2640-436a-9ba1-5afbcb8b90ed",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_block_ids",
+      "http_status": 502,
+      "request_id": "68aec834-7da9-407b-b868-e6ad8ceed766",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_block_ids-capacity",
+      "http_status": 502,
+      "request_id": "b93ee496-8ee3-4aed-8e86-56fa26ac3e5b",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-remote_num_tokens",
+      "http_status": 502,
+      "request_id": "13170710-5474-4e77-aff4-d37fc8a5dd9d",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "reject-do_remote_prefill",
+      "http_status": 502,
+      "request_id": "f8f17a15-841b-4a64-b1cc-203c1845241e",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "produce-unavailable",
+      "http_status": 503,
+      "request_id": "22fd0204-a0d5-4de5-a144-36d14127e246",
+      "visited": [
+        "p1"
+      ]
+    },
+    {
+      "case": "consume-unavailable",
+      "http_status": 503,
+      "request_id": "942caad5-0c27-4385-a9e0-73d24cdec875",
+      "visited": [
+        "p1",
+        "d1"
+      ]
+    },
+    {
+      "case": "missing-producer-route",
+      "http_status": 400,
+      "request_id": "c5f697b0-63be-4a9a-b1af-0f929767e51b",
+      "visited": []
+    },
+    {
+      "case": "reject-reserved-input",
+      "http_status": 400,
+      "request_id": "f562ec31-9221-4fbc-997a-89f1d95a4a82",
+      "visited": []
+    },
+    {
+      "case": "reject-model",
+      "http_status": 400,
+      "request_id": "81454cbe-77ba-4301-9919-8f9106d5f78f",
+      "visited": []
+    }
+  ],
+  "kubernetes": {
+    "api": "v1.34.1",
+    "strict_schema_valid": 15,
+    "chart": "llm-d-router-standalone 1.0.0",
+    "replacement": [
+      {
+        "case": "first-incarnation",
+        "status": 200,
+        "request_id": "1aa58b49-7515-445c-8990-373e3a5bca4d",
+        "producer_incarnation": "producer-incarnation-a",
+        "selected_producer": "gpu0",
+        "selected_consumer": "npu0"
+      },
+      {
+        "case": "replacement-incarnation",
+        "status": 200,
+        "request_id": "5a610b5d-a26f-4a22-8d28-b3347995d0a2",
+        "producer_incarnation": "producer-incarnation-b",
+        "selected_producer": "gpu0",
+        "selected_consumer": "npu0"
+      },
+      {
+        "case": "reject-replaced-engine-lease",
+        "status": 502,
+        "request_id": "e7e96353-1a26-4f26-9fb1-eda0b43b7e07",
+        "producer_incarnation": null,
+        "selected_producer": "gpu0",
+        "selected_consumer": "npu0"
+      },
+      {
+        "case": "recover-current-lease",
+        "status": 200,
+        "request_id": "ec6e5a98-e6a3-4661-8295-622e6805f854",
+        "producer_incarnation": "producer-incarnation-b",
+        "selected_producer": "gpu0",
+        "selected_consumer": "npu0"
+      }
+    ],
+    "kubelet_accelerator_execution": "not_run"
+  },
+  "overlap": {
+    "run_id": "e29d9312fb0740ebb60aeabeee1d703f",
+    "status": "passed",
+    "native_epp_estimate": {
+      "Policy": "cost-route-handler",
+      "Input": 64,
+      "Output": 32,
+      "InputSource": "parser-token-ids",
+      "Priority": 0,
+      "TTFTMs": 36.3,
+      "FinishMs": 51.8,
+      "DecodeWaitMs": 32,
+      "TransferMs": 10.2,
+      "TTFTGoalMs": 0,
+      "PreloadBytes": 16777216,
+      "Preload": true
+    },
+    "first_decoder_request": "cmpl-b178e162-0a4f-42cc-a012-865e9301748b-0-ae78a470",
+    "next_decoder_request": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+    "transfer": {
+      "kind": "kv_xfer_start",
+      "rank": "0",
+      "req_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+      "remote_engine_id": "e29d9312fb0740ebb60aeabeee1d703f-gpu0",
+      "remote_request_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-8ff953b0",
+      "remote_block_ids": [
+        [
+          9
+        ]
+      ],
+      "local_block_ids": [
+        [
+          13
+        ]
+      ],
+      "engine_id": "e29d9312fb0740ebb60aeabeee1d703f-npu0",
+      "monotonic_ns": 9188551605183327
+    },
+    "host_ready": {
+      "kind": "kv_host_ready",
+      "rank": "0",
+      "req_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+      "monotonic_ns": 9188551633373552,
+      "last_proc_ns": 9188551633075515
+    },
+    "allocation": {
+      "event": "PREPARE_ALLOCATED_RECV_QUEUED",
+      "monotonic_ns": 9188551604184102,
+      "engine_id": "e29d9312fb0740ebb60aeabeee1d703f-npu0",
+      "request_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+      "remote_request_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-8ff953b0",
+      "remote_engine_id": "e29d9312fb0740ebb60aeabeee1d703f-gpu0",
+      "allocated_blocks": 1,
+      "allocated_bytes": 14680064,
+      "local_block_ids": [
+        [
+          13
+        ]
+      ],
+      "prompt_token_count": 64,
+      "virtual_full_output_blocks": 1,
+      "active_count": 1,
+      "token_compute_scheduled": false
+    },
+    "previous_decode_terminal": {
+      "event": "REQUEST_TERMINAL",
+      "monotonic_ns": 9188560088877257,
+      "engine_id": "e29d9312fb0740ebb60aeabeee1d703f-npu0",
+      "request_id": "cmpl-b178e162-0a4f-42cc-a012-865e9301748b-0-ae78a470",
+      "remote_request_id": "cmpl-b178e162-0a4f-42cc-a012-865e9301748b-0-ae884ab3",
+      "remote_engine_id": "e29d9312fb0740ebb60aeabeee1d703f-gpu0",
+      "status": "FINISHED_LENGTH_CAPPED",
+      "delayed_block_release": false,
+      "quarantined_pending_credit": false
+    },
+    "import_grant": {
+      "event": "IMPORT_GRANTED",
+      "monotonic_ns": 9188560089287024,
+      "engine_id": "e29d9312fb0740ebb60aeabeee1d703f-npu0",
+      "request_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+      "remote_request_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-8ff953b0",
+      "remote_engine_id": "e29d9312fb0740ebb60aeabeee1d703f-gpu0"
+    },
+    "import_done": {
+      "kind": "kv_h2d",
+      "rank": "0",
+      "req_id": "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21",
+      "monotonic_ns": 9188560108089120,
+      "start_ns": 9188560089731042,
+      "end_ns": 9188560108089120,
+      "h2d_ns": 17834925,
+      "reorder_ns": 0,
+      "num_blocks": 1,
+      "bytes_est": 14680064
+    },
+    "first_next_decode": {
+      "kind": "model_call",
+      "rank": "0",
+      "phase": "decode",
+      "request_ids": [
+        "cmpl-409fb798-b9a8-4bd3-a261-f858699fe2e9-0-a3e1af21"
+      ],
+      "span_start_ns": 9188560110482981,
+      "span_end_ns": 9188560110839200,
+      "monotonic_ns": 9188560110840362
+    },
+    "max_model_call_receive_overlap_ns": 525390,
+    "decode_step": {
+      "kind": "step",
+      "rank": "0",
+      "monotonic_ns": 9188551634109121,
+      "phase": "decode",
+      "exec_s": 0.008154768496751785,
+      "span_start_ns": 9188551625807433,
+      "span_end_ns": 9188551634109121,
+      "host": null,
+      "device": null,
+      "ccl": null,
+      "prepare": null,
+      "active_requests": 1,
+      "context_len_sum": 256
+    },
+    "model_call_in_step": {
+      "kind": "model_call",
+      "rank": "0",
+      "phase": "decode",
+      "request_ids": [
+        "cmpl-b178e162-0a4f-42cc-a012-865e9301748b-0-ae78a470"
+      ],
+      "span_start_ns": 9188551625808372,
+      "span_end_ns": 9188551626161253,
+      "monotonic_ns": 9188551626162620
+    },
+    "in_progress_inside_step": true,
+    "done_observed_inside_step": true,
+    "step_receive_overlap_ns": 7566119,
+    "host_dwell_ns": 8456357490,
+    "timing": "host-monotonic model and sampler step, independent NIXL polling"
+  },
+  "cancellation": {
+    "run_id": "e29d9312fb0740ebb60aeabeee1d703f",
+    "status": "passed",
+    "request_id": "f370397b-5919-428a-be89-4e8e9b402711",
+    "events": [
+      {
+        "event": "PREPARE_ALLOCATED_RECV_QUEUED",
+        "request_id": "cmpl-f370397b-5919-428a-be89-4e8e9b402711-0-85f29608",
+        "monotonic_ns": 9188587406902258,
+        "allocated_bytes": 14680064
+      },
+      {
+        "event": "REQUEST_TERMINAL",
+        "request_id": "cmpl-f370397b-5919-428a-be89-4e8e9b402711-0-85f29608",
+        "monotonic_ns": 9188587417363279
+      },
+      {
+        "event": "BLOCKS_RELEASED",
+        "request_id": "cmpl-f370397b-5919-428a-be89-4e8e9b402711-0-85f29608",
+        "monotonic_ns": 9188587448981441
+      }
+    ],
+    "recovery_request": "d323a759-e4f5-40b3-845e-fd501908dd01"
+  },
+  "overlap_reference": {
+    "weights_sha256": "f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b",
+    "reference_run": "afff0ebda8cb4cc7b2324abd3a241a0b",
+    "correctness": "passed",
+    "first": {
+      "output_tokens": 896,
+      "exact": true,
+      "gpu_request": "873fdb58-44f8-4e0c-be6e-e66082df7a0b",
+      "source_request": "b178e162-0a4f-42cc-a012-865e9301748b",
+      "output_sha256": "db89de171a027e9919478ae7db5010b86c66af7ea44a1d456803cb01fbd00b8c"
+    },
+    "following": {
+      "output_tokens": 32,
+      "exact": true,
+      "gpu_request": "7ccc477a-4f66-48eb-b211-47ae86e9e562",
+      "source_request": "409fb798-b9a8-4bd3-a261-f858699fe2e9",
+      "output_sha256": "9a2dce100afc1261eb818e8f257ceb270d40f3acb25638cde7da9d975ea5a75b"
+    }
+  },
+  "warm_cache": {
+    "gpu0": {
+      "key": "c9a2957088ce9a3b46cd8c1c6f5e695b631e7c3235143139f03eedc01111b7b6",
+      "reused": true
+    },
+    "npu0": {
+      "key": "5748890a0cd4e60319101c24cd043d45e5a93d2208e82acb7c8a5eac84e4204e",
+      "reused": true
+    }
+  },
+  "scope": {
+    "software": [
+      "99 engine/connector regression tests",
+      "10 configuration, cache and lifecycle tests",
+      "Go plugin unit, race, vet",
+      "actual API server create, Pod watcher and stale-lease rejection"
+    ],
+    "unmeasured": [
+      "physical GPU+RBLN Kubernetes deployment",
+      "physical 2P2D or multi-host/TP2 NIXL",
+      "device-kernel time overlap",
+      "throughput or latency improvement over baseline",
+      "hardware transfer-timeout or producer power loss"
+    ]
+  }
+}

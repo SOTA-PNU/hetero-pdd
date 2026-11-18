@@ -1,0 +1,346 @@
+diff --git a/pkg/sidecar/proxy/connector_nixlv2.go b/pkg/sidecar/proxy/connector_nixlv2.go
+index b235cfa..d9b438b 100644
+--- a/pkg/sidecar/proxy/connector_nixlv2.go
++++ b/pkg/sidecar/proxy/connector_nixlv2.go
+@@ -78,6 +78,14 @@ func (s *Server) handleNIXLV2(w http.ResponseWriter, r *http.Request, prefillPod
+ 		return
+ 	}
+ 
++	if strictNIXL() {
++		uuidStr = r.Header.Get(reqcommon.RequestIDHeaderKey)
++		if err := validateSingleCompletion(r, body); err != nil {
++			http.Error(w, err.Error(), http.StatusBadRequest)
++			return
++		}
++	}
++
+ 	// Parallel-dispatch path synthesises decode's kv_transfer_params from config
+ 	// instead of the prefill response. The serial path below is unchanged when off.
+ 	if s.config.MoRIIOParallelDispatch && s.config.MoRIIOWriteMode {
+@@ -104,7 +112,11 @@ func (s *Server) handleNIXLV2(w http.ResponseWriter, r *http.Request, prefillPod
+ 	// 1. Prepare prefill request
+ 	preq := r.Clone(ctx)
+ 
+-	preq.Header.Add(reqcommon.RequestIDHeaderKey, uuidStr)
++	if strictNIXL() {
++		preq.Header.Set(reqcommon.RequestIDHeaderKey, uuidStr)
++	} else {
++		preq.Header.Add(reqcommon.RequestIDHeaderKey, uuidStr)
++	}
+ 
+ 	// KV metadata uses global ranks; HTTP dispatch uses pod-local ranks.
+ 	globalDPRank, localDPRank := pickDPRanks(
+@@ -168,6 +180,13 @@ func (s *Server) handleNIXLV2(w http.ResponseWriter, r *http.Request, prefillPod
+ 	s.addP2PPullToPrefill(prefillRequest[reqcommon.FieldKVTransferParams].(map[string]any), kvCacheSource, prefillPodHostPort)
+ 
+ 	reqcommon.CapSingleToken(prefillRequest, apiType)
++	if strictNIXL() {
++		prefillRequest["return_token_ids"] = true
++		prefillRequest["ignore_eos"] = true
++		prefillRequest["min_tokens"] = 1
++		delete(prefillRequest, "stop")
++		delete(prefillRequest, "stop_token_ids")
++	}
+ 
+ 	pbody, err := json.Marshal(prefillRequest)
+ 	if err != nil {
+@@ -270,6 +289,24 @@ retryLoop:
+ 	// 3. Verify response
+ 
+ 	pKVTransferParams, ok := prefillerResponse[reqcommon.FieldKVTransferParams]
++	if strictNIXL() {
++		params, blocks, err := validatedHandle(r, body, prefillerResponse, pw.statusCode)
++		if err != nil {
++			metrics.RecordError(metrics.StagePrefill)
++			s.logger.Error(err, "hetero_kv_rejected", "request_id", uuidStr)
++			http.Error(w, err.Error(), http.StatusBadGateway)
++			return
++		}
++		delete(params, "hetero_preload")
++		if r.Header.Get("x-hetero-preload") == "1" {
++			params["hetero_preload"] = true
++		}
++		w.Header().Set("x-kv-remote-request-id", params["remote_request_id"].(string))
++		w.Header().Set("x-kv-remote-engine-id", params["remote_engine_id"].(string))
++		w.Header().Set("x-kv-remote-blocks", strconv.Itoa(blocks))
++		s.logger.Info("hetero_kv_validated", "request_id", uuidStr, "producer", prefillPodHostPort,
++			"remote_engine_id", params["remote_engine_id"], "remote_request_id", params["remote_request_id"], "blocks", blocks)
++	}
+ 	if !ok {
+ 		s.logger.Info("warning: missing 'kv_transfer_params' field in prefiller response")
+ 	}
+@@ -301,7 +338,11 @@ retryLoop:
+ 	// 1. Prepare decode request
+ 	dreq := r.Clone(ctx)
+ 
+-	dreq.Header.Add(reqcommon.RequestIDHeaderKey, uuidStr)
++	if strictNIXL() {
++		dreq.Header.Set(reqcommon.RequestIDHeaderKey, uuidStr)
++	} else {
++		dreq.Header.Add(reqcommon.RequestIDHeaderKey, uuidStr)
++	}
+ 
+ 	// Preserve prefill's global rank for notify routing and dispatch decode to
+ 	// its pod-local equivalent. Fallback ranks use the selected prefill pod.
+diff --git a/pkg/sidecar/proxy/dispatch.go b/pkg/sidecar/proxy/dispatch.go
+index 11915e4..e7a56b8 100644
+--- a/pkg/sidecar/proxy/dispatch.go
++++ b/pkg/sidecar/proxy/dispatch.go
+@@ -95,6 +95,12 @@ func (s *Server) disaggregatedPrefillHandler(apiType reqcommon.APIType) http.Han
+ 			}
+ 		}
+ 
++		if strictNIXL() {
++			if err := validateRoute(r, prefillHostPort, numHosts); err != nil {
++				http.Error(w, err.Error(), http.StatusBadRequest)
++				return
++			}
++		}
+ 		if len(prefillHostPort) == 0 {
+ 			logger.V(logging.DEBUG).Info("skip disaggregated prefill", "api", apiType.String())
+ 			span.SetAttributes(
+@@ -210,11 +216,15 @@ func (s *Server) disaggregatedPrefillHandler(apiType reqcommon.APIType) http.Han
+ 		// the guard in readJSONBody would never run on those branches.
+ 		// decodeWithP2PSource reads the body itself and re-runs it.
+ 		// readJSONBody consumes r.Body, so r is rebuilt over the same bytes.
+-		if apiType == reqcommon.APITypeResponses {
+-			raw, _, ok := s.readJSONBody(r, w)
++		if apiType == reqcommon.APITypeResponses || strictNIXL() {
++			raw, body, ok := s.readJSONBody(r, w)
+ 			if !ok {
+ 				return
+ 			}
++			if strictNIXL() && body["kv_transfer_params"] != nil {
++				http.Error(w, "client KV transfer controls are reserved", http.StatusBadRequest)
++				return
++			}
+ 			r = cloneRequestWithBody(r.Context(), r, raw)
+ 		}
+ 		if !s.forwardDataParallel || !s.dataParallelHandler(w, r) {
+diff --git a/pkg/sidecar/proxy/hetero_nixl.go b/pkg/sidecar/proxy/hetero_nixl.go
+new file mode 100644
+index 0000000..260e2bf
+--- /dev/null
++++ b/pkg/sidecar/proxy/hetero_nixl.go
+@@ -0,0 +1,162 @@
++// SPDX-License-Identifier: Apache-2.0
++package proxy
++
++import (
++	"encoding/json"
++	"fmt"
++	"math"
++	"net"
++	"net/http"
++	"os"
++	"reflect"
++	"regexp"
++	"strconv"
++	"strings"
++)
++
++func strictNIXL() bool { return os.Getenv("HETERO_PDD_STRICT") == "1" }
++
++var internalIDSuffix = regexp.MustCompile("^[0-9a-f]{8}$")
++
++func validateRoute(r *http.Request, prefill string, hosts int) error {
++	h := r.Header
++	if target := h.Get("x-hetero-target"); target == "" || target != os.Getenv("HETERO_ENDPOINT_ID") {
++		return fmt.Errorf("EPP target identity mismatch")
++	}
++	switch h.Get("x-hetero-path") {
++	case "full":
++		if hosts != 0 || h.Get("x-hetero-prefill") != "" || h.Get("x-hetero-preload") != "" {
++			return fmt.Errorf("unexpected PDD controls on full route")
++		}
++	case "pdd":
++		host, port, err := net.SplitHostPort(prefill)
++		if hosts != 1 || err != nil || host == "" || port == "" || host != h.Get("x-hetero-expected-host") || h.Get("x-hetero-prefill") == "" {
++			return fmt.Errorf("missing or inconsistent selected PDD producer")
++		}
++	default:
++		return fmt.Errorf("missing EPP route decision")
++	}
++	return nil
++}
++
++// vLLM 0.22 returns one NIXL lease per completion. Fail before dispatch for
++// representations that would need multiple leases or a different ID scheme.
++func validateSingleCompletion(r *http.Request, body map[string]any) error {
++	if r.URL.Path != "/v1/completions" || r.Header.Get("x-request-id") == "" {
++		return fmt.Errorf("strict NIXL requires /v1/completions and a request ID")
++	}
++	if _, exists := body["kv_transfer_params"]; exists {
++		return fmt.Errorf("client KV transfer controls are reserved")
++	}
++	if n, exists := body["n"]; exists && n != float64(1) {
++		return fmt.Errorf("strict NIXL requires one completion")
++	}
++	if raw, ok := body["prompt"].(json.RawMessage); ok {
++		var prompt any
++		if err := json.Unmarshal(raw, &prompt); err != nil {
++			return err
++		}
++		body["prompt"] = prompt
++	}
++	if raw, ok := body["use_beam_search"].(json.RawMessage); ok && string(raw) == "true" {
++		return fmt.Errorf("strict NIXL requires a single sequence")
++	}
++	switch prompt := body["prompt"].(type) {
++	case string:
++		if prompt != "" {
++			return nil
++		}
++	case []any:
++		if len(prompt) != 0 {
++			for _, id := range prompt {
++				n, ok := id.(float64)
++				if !ok || n < 0 || n != math.Trunc(n) {
++					return fmt.Errorf("expected one tokenized prompt")
++				}
++			}
++			return nil
++		}
++	}
++	return fmt.Errorf("expected one nonempty prompt")
++}
++
++func positiveInt(value any) (int, bool) {
++	number, ok := value.(float64)
++	if !ok || number < 1 || number > math.MaxInt32 || number != math.Trunc(number) {
++		return 0, false
++	}
++	return int(number), true
++}
++
++func validatedHandle(r *http.Request, body, reply map[string]any, status int) (map[string]any, int, error) {
++	h := r.Header
++	id := "cmpl-" + h.Get("x-request-id")
++	params, ok := reply["kv_transfer_params"].(map[string]any)
++	if status != http.StatusOK || !ok || reply["id"] != id || params["do_remote_prefill"] != true || params["do_remote_decode"] != false {
++		return nil, 0, fmt.Errorf("invalid producer response, response ID or transfer direction")
++	}
++	internal, _ := params["remote_request_id"].(string)
++	base := id + "-0"
++	if internal != base && !(strings.HasPrefix(internal, base+"-") && internalIDSuffix.MatchString(strings.TrimPrefix(internal, base+"-"))) {
++		return nil, 0, fmt.Errorf("NIXL lease refers to a different request")
++	}
++	for key, suffix := range map[string]string{"remote_engine_id": "engine", "remote_host": "host"} {
++		expected := h.Get("x-hetero-expected-" + suffix)
++		if expected == "" || params[key] != expected {
++			return nil, 0, fmt.Errorf("unexpected NIXL %s", key)
++		}
++	}
++	for key, suffix := range map[string]string{"remote_port": "port", "tp_size": "tp"} {
++		got, ok := positiveInt(params[key])
++		if !ok || strconv.Itoa(got) != h.Get("x-hetero-expected-"+suffix) {
++			return nil, 0, fmt.Errorf("unexpected NIXL %s", key)
++		}
++	}
++	usage, _ := reply["usage"].(map[string]any)
++	tokens, ok := positiveInt(usage["prompt_tokens"])
++	size, err := strconv.Atoi(h.Get("x-hetero-expected-block-size"))
++	if !ok || err != nil || size <= 0 {
++		return nil, 0, fmt.Errorf("missing prompt or block size")
++	}
++	choices, _ := reply["choices"].([]any)
++	if len(choices) != 1 {
++		return nil, 0, fmt.Errorf("expected a single producer completion")
++	}
++	choice, _ := choices[0].(map[string]any)
++	ids, _ := choice["prompt_token_ids"].([]any)
++	if len(ids) != tokens {
++		return nil, 0, fmt.Errorf("producer prompt token count mismatch")
++	}
++	if original, ok := body["prompt"].([]any); ok && !reflect.DeepEqual(original, ids) {
++		return nil, 0, fmt.Errorf("producer prompt token IDs do not match request")
++	}
++	if covered, exists := params["remote_num_tokens"]; exists && covered != float64(tokens) {
++		return nil, 0, fmt.Errorf("incomplete remote token range")
++	}
++	groups, _ := params["remote_block_ids"].([]any)
++	if len(groups) == 0 {
++		return nil, 0, fmt.Errorf("empty NIXL block group list")
++	}
++	capacity, err := strconv.Atoi(h.Get("x-hetero-expected-num-blocks"))
++	if err != nil || capacity <= 0 {
++		return nil, 0, fmt.Errorf("missing remote block capacity")
++	}
++	expected := (tokens-1)/size + 1
++	total := 0
++	for _, group := range groups {
++		ids, _ := group.([]any)
++		if len(ids) != expected {
++			return nil, 0, fmt.Errorf("incomplete dense-attention block range")
++		}
++		seen := make(map[float64]bool, len(ids))
++		for _, id := range ids {
++			n, ok := id.(float64)
++			if !ok || n < 0 || n >= float64(capacity) || n != math.Trunc(n) || seen[n] {
++				return nil, 0, fmt.Errorf("invalid or duplicated block ID")
++			}
++			seen[n] = true
++		}
++		total += len(ids)
++	}
++	return params, total, nil
++}
+diff --git a/pkg/sidecar/proxy/hetero_nixl_test.go b/pkg/sidecar/proxy/hetero_nixl_test.go
+new file mode 100644
+index 0000000..68f4578
+--- /dev/null
++++ b/pkg/sidecar/proxy/hetero_nixl_test.go
+@@ -0,0 +1,53 @@
++// SPDX-License-Identifier: Apache-2.0
++package proxy
++
++import (
++	"net/http/httptest"
++	"testing"
++)
++
++func TestHeteroNoDecodeFallback(t *testing.T) {
++	t.Setenv("HETERO_ENDPOINT_ID", "d")
++	r := httptest.NewRequest("POST", "/v1/completions", nil)
++	r.Header.Set("x-hetero-target", "d")
++	r.Header.Set("x-hetero-path", "pdd")
++	r.Header.Set("x-hetero-expected-host", "127.0.0.1")
++	r.Header.Set("x-hetero-prefill", "p")
++	for _, tc := range []struct {
++		producer string
++		count    int
++		valid    bool
++	}{
++		{"", 0, false}, {"127.0.0.2:8000", 1, false}, {"127.0.0.1:8000", 2, false},
++		{"127.0.0.1:8000", 1, true},
++	} {
++		if ok := validateRoute(r, tc.producer, tc.count) == nil; ok != tc.valid {
++			t.Errorf("producer %v: accepted=%v", tc, ok)
++		}
++	}
++	r.Header.Set("x-hetero-path", "full")
++	if validateRoute(r, "", 0) == nil {
++		t.Fatal("accepted a mixed full/PDD decision")
++	}
++	r.Header.Del("x-hetero-prefill")
++	if err := validateRoute(r, "", 0); err != nil {
++		t.Fatal(err)
++	}
++	r.Header.Set("x-hetero-target", "other")
++	if validateRoute(r, "", 0) == nil {
++		t.Fatal("accepted another endpoint's request")
++	}
++}
++
++func TestHeteroRejectAmbiguousCompletion(t *testing.T) {
++	r := httptest.NewRequest("POST", "/v1/completions", nil)
++	r.Header.Set("x-request-id", "one")
++	for _, body := range []map[string]any{
++		{"prompt": "ok", "n": float64(2)}, {"prompt": []any{"first", "second"}}, {"prompt": []any{}},
++		{"prompt": "ok", "kv_transfer_params": nil}, {"prompt": []any{float64(-1)}},
++	} {
++		if err := validateSingleCompletion(r, body); err == nil {
++			t.Errorf("accepted %v", body)
++		}
++	}
++}

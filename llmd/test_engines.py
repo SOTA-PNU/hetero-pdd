@@ -1,94 +1,121 @@
-"""Engine/connector contracts that can be checked without accelerator access."""
+"""Backend, compile-cache and correctness contracts independent of hardware."""
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from llmd import engines
+from llmd import config, engines
+from llmd.verify import reference_output
 
 
-class NativeEngineTests(unittest.TestCase):
-    def test_baseline_and_transfer_have_distinct_launch_contracts(self):
-        with TemporaryDirectory() as work:
-            options = {
-                "gpu_python": "/venv/cuda/bin/python",
-                "npu_python": "/venv/npu/bin/python",
-                "hub_cache": work,
-                "max_model_len": 4096,
-            }
-            common = dict(
-                run_dir=Path(work),
-                run_id="abc",
-                cuda_device=3,
-                instrumentation={"rbln_events": True},
-            )
-            for role, kind in (
-                ("full", "gpu"),
-                ("full", "npu"),
-                ("prefill", "gpu"),
-                ("decode", "npu"),
-            ):
-                ep = dict(
-                    id=kind + role,
-                    kind=kind,
-                    role=role,
-                    device=3 if kind == "gpu" else 1,
-                    port=8111,
-                    kv_port=8222,
+class EngineTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.work = Path(temp.name)
+        self.cfg = config.load(engines.ROOT / "experiments/pool-2p2d.yaml")
+        self.model = engines.model_info(self.cfg["model"], {"hub_cache": self.work})
+
+    def test_connector_identity_and_peer_devices(self):
+        with patch.dict(
+            "os.environ", CUDA_PY="/cuda/bin/python", RBLN_PY="/rbln/bin/python"
+        ):
+            for ep in self.cfg["endpoints"]:
+                spec = engines.engine_spec(
+                    self.model,
+                    ep,
+                    work=self.work,
+                    engine_id="run-" + ep["id"],
+                    cache=self.work / "cache",
+                    peer_devices=[1, 3],
+                    instrumentation={},
                 )
-                with self.subTest(role=role, kind=kind):
-                    spec = engines.engine_spec("qwen3-0.6b", options, ep, **common)
-                    argv, env = spec["argv"], spec["env"]
-                    self.assertIn(
-                        str(Path(work) / "cache" / ep["id"]), env["VLLM_CACHE_ROOT"]
-                    )
-                    self.assertEqual(
-                        argv[argv.index("--num-gpu-blocks-override") + 1], "33"
-                    )
-                    if role == "full":
-                        self.assertNotIn("--kv-transfer-config", argv)
-                        self.assertNotIn("VLLM_NIXL_SIDE_CHANNEL_PORT", env)
-                    else:
-                        transfer = json.loads(
-                            argv[argv.index("--kv-transfer-config") + 1]
-                        )
-                        self.assertEqual(transfer["engine_id"], "abc-" + ep["id"])
-                        self.assertEqual(transfer["kv_load_failure_policy"], "fail")
-                        self.assertEqual(
-                            transfer["kv_buffer_device"],
-                            "cuda" if kind == "gpu" else "cpu",
-                        )
-                        self.assertEqual(env["VLLM_KV_CACHE_LAYOUT"], "HND")
-                        self.assertEqual(env["VLLM_NIXL_SIDE_CHANNEL_PORT"], "8222")
-                    if kind == "npu":
-                        self.assertEqual(env["RBLN_DEVICES"], "1")
-                        self.assertEqual(
-                            env["CUDA_VISIBLE_DEVICES"],
-                            "3" if role == "decode" else "",
-                        )
-                        self.assertTrue(Path(env["VLLM_RBLN_METRICS_DIR"]).is_dir())
-                        self.assertTrue(Path(env["RBLN_OFFLOAD_DIR"]).is_dir())
+                argv, env = spec["argv"], spec["env"]
+                transfer = json.loads(argv[argv.index("--kv-transfer-config") + 1])
+                self.assertEqual(transfer["engine_id"], "run-" + ep["id"])
+                self.assertEqual(transfer["kv_load_failure_policy"], "fail")
+                if ep["kind"] == "npu":
+                    self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "1,3")
+                    self.assertEqual(transfer["kv_buffer_device"], "cpu")
+                ep["roles"] = ["full"]
+                standalone = engines.engine_spec(
+                    self.model,
+                    ep,
+                    work=self.work,
+                    engine_id="full",
+                    cache=self.work / "cache",
+                    peer_devices=[],
+                    instrumentation={},
+                )
+                self.assertNotIn("--kv-transfer-config", standalone["argv"])
 
-    def test_incomplete_or_wrong_snapshot_is_rejected(self):
-        with TemporaryDirectory() as cache:
-            model = engines.model_info("qwen3-1.7b", {"hub_cache": cache})
-            path = Path(model["path"])
-            with self.assertRaisesRegex(ValueError, "missing pinned snapshot"):
-                engines._snapshot(model)
-            path.mkdir(parents=True)
-            (path / "config.json").write_text('{"architectures": ["Unknown"]}')
-            with self.assertRaisesRegex(ValueError, "unquantized"):
-                engines._snapshot(model)
-            (path / "config.json").write_text('{"architectures": ["Qwen3ForCausalLM"]}')
-            (path / "tokenizer.json").touch()
-            (path / "tokenizer_config.json").touch()
-            (path / "model.safetensors.index.json").write_text(
-                '{"weight_map": {"a": "missing.safetensors"}}'
+    def test_snapshot_shard_presence(self):
+        with self.assertRaisesRegex(ValueError, "missing pinned snapshot"):
+            engines._snapshot(self.model)
+        path = Path(self.model["path"])
+        path.mkdir(parents=True)
+        (path / "config.json").write_text('{"architectures":["NewArchitecture"]}')
+        for f in ("tokenizer.json", "tokenizer_config.json"):
+            (path / f).touch()
+        (path / "model.safetensors.index.json").write_text(
+            '{"weight_map":{"a":"missing.safetensors"}}'
+        )
+        with self.assertRaisesRegex(ValueError, "missing.safetensors"):
+            engines._snapshot(self.model)
+
+    def test_only_ready_compatible_generation_is_reused(self):
+        ep = self.cfg["endpoints"][0]
+
+        def cache():
+            return engines.compilation_cache(
+                self.work, self.model, ep, {"driver": "one"}
             )
-            with self.assertRaisesRegex(ValueError, "missing.safetensors"):
-                engines._snapshot(model)
 
+        with cache() as (bad, _, _):
+            pass
+        self.assertFalse(bad.exists())
+        with cache() as (built, meta, publish):
+            self.assertFalse(meta["reused"])
+            publish()
+        with cache() as (again, meta, _):
+            self.assertTrue(meta["reused"])
+            self.assertEqual(again, built)
+        ep["engine"]["tp"] = 2
+        with cache() as (other, meta, _):
+            self.assertFalse(meta["reused"])
+            self.assertNotEqual(other, built)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_tokenizer_or_generation_change_rejects_reference(self):
+        path = self.work / "reference.json"
+        source = dict(
+            schema_version=2,
+            status="smoke_passed",
+            correctness="not_evaluated",
+            smoke="passed",
+            gpu_only=True,
+            run_id="independent",
+            model=self.model,
+            conditions={"seed": 0},
+            requests=[dict(path="full", prompt_ids=[1], token_ids=[2])],
+        )
+        path.write_text(json.dumps(source))
+        self.assertEqual(
+            reference_output(path, self.model, "new", [[1]], {"seed": 0}),
+            source["requests"],
+        )
+        with self.assertRaises(ValueError):
+            reference_output(
+                path,
+                {**self.model, "tokenizer_revision": "f" * 40},
+                "new",
+                [[1]],
+                {"seed": 0},
+            )
+        with self.assertRaises(ValueError):
+            reference_output(path, self.model, "new", [[1]], {"seed": 1})
+        self.assertIsNone(reference_output(None, self.model, "new", [[1]], {}))
+        path.write_text(json.dumps(dict(source, status="failed", correctness="failed")))
+        with self.assertRaises(ValueError):
+            reference_output(path, self.model, "new", [[1]], {"seed": 0})

@@ -1,0 +1,59 @@
+# Historical selective_pdd replay example using x-pdd-request-index.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: trace-allocation
+  parameters:
+    reason: configured_trace_assignment
+- type: trace-allocation-handler
+  parameters:
+    allocation:
+      '0': gpu0
+      '1': npu0
+      '2': npu0
+    pddTargets:
+    - npu0
+    pddRequestIndices:
+    - 1
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: label-selector-filter
+  name: prefill-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/producer: 'true'
+- type: label-selector-filter
+  name: decode-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/consumer: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: max-score-picker
+- name: prefill
+  plugins:
+  - pluginRef: prefill-capability
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor

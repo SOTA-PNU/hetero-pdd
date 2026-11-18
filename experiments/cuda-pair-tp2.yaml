@@ -1,0 +1,23 @@
+apiVersion: hetero-pdd/v2
+model: models/qwen3-1.7b.yaml
+profile: ../llmd/epp/profiles/fixed-pdd.yaml
+engine: {tp: 2}
+endpoints:
+  - id: cuda-a
+    backend: cuda
+    roles: [prefill, full]
+    node: gpu-a
+    host: 192.0.2.10
+    devices: [0, 1]
+    port: 8000
+    kv_port: 5557
+  - id: cuda-b
+    backend: cuda
+    roles: [decode, full]
+    node: gpu-b
+    host: 192.0.2.11
+    devices: [0, 1]
+    port: 8001
+    kv_port: 5557
+    sidecar_port: 8000
+verify: {paths: [pdd], input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}

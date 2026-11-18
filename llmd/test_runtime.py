@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
@@ -25,16 +26,22 @@ class RuntimeTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.work = Path(temp.name)
-        self.base = yaml.safe_load((ROOT / "experiments/baseline.yaml").read_text())
+        ex = ROOT / "experiments"
+        self.base = yaml.safe_load((ex / "baseline.yaml").read_text())
+        for key in ("model", "profile"):
+            self.base[key] = str((ex / self.base[key]).resolve())
+        self.bins = self.work / "bin"
+        self.bins.mkdir()
+        for name in ("epp", "envoy", "pd-sidecar"):
+            (self.bins / name).symlink_to(sys.executable)
 
     def test_invalid_experiments(self):
         path = self.work / "invalid.yaml"
         for change, expected in (
-            ({"model": "uncompiled-family"}, "model preset"),
-            ({"policy": "lookahead"}, "policy"),
-            ({"policy": "fixed-pdd"}, "fixed-pdd"),
+            ({"model": {"name": "Org/NewModel", "revision": "latest"}}, "immutable"),
+            ({"policy": "lookahead"}, "unknown keys"),
             ({"endpoints": self.base["endpoints"] * 2}, "duplicate"),
-            ({"port": self.base["endpoints"][0]["port"]}, "duplicate port"),
+            ({"ports": {"gateway": self.base["endpoints"][0]["port"]}}, "duplicate"),
         ):
             with self.subTest(change=change):
                 path.write_text(yaml.safe_dump({**self.base, **change}))
@@ -50,7 +57,7 @@ class RuntimeTest(unittest.TestCase):
         with socket.socket() as other:
             other.bind(("127.0.0.1", 0))
             other.listen()
-            self.base["port"] = other.getsockname()[1]
+            self.base["ports"] = {"gateway": other.getsockname()[1]}
             path = self.work / "config.yaml"
             path.write_text(yaml.safe_dump(self.base))
             work = self.work / "run"
@@ -64,7 +71,7 @@ class RuntimeTest(unittest.TestCase):
                     "--work-dir",
                     str(work),
                 ],
-                env={**os.environ, "LLMD_ROUTER_BIN": sys.executable},
+                env={**os.environ, "LLMD_BIN_DIR": str(self.bins)},
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -90,12 +97,21 @@ class RuntimeTest(unittest.TestCase):
                 other.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN), 1
             )
 
-    def test_normalized_experiments_can_be_reused(self):
-        path = self.work / "effective.yaml"
-        for example in (ROOT / "experiments").glob("*.yaml"):
-            chosen = config.load(example)
-            path.write_text(json.dumps(chosen))
-            self.assertEqual(config.load(path), chosen)
+    def test_all_examples_and_full_pair_graph(self):
+        for path in (ROOT / "experiments").glob("*.yaml"):
+            self.assertEqual(config.load(path)["apiVersion"], "hetero-pdd/v2")
+        cfg = config.load(ROOT / "experiments/pool-2p2d.yaml")
+        self.assertEqual(
+            [e["peers"] for e in cfg["endpoints"] if "decode" in e["roles"]],
+            [["gpu0", "gpu1"], ["gpu0", "gpu1"]],
+        )
+        p0, p1, d, _ = cfg["endpoints"]
+        d["node"] = "remote"
+        self.assertIn("same node", config.pair_error(p0, d, cfg["model"]))
+        d["backend"] = "cuda"
+        self.assertIsNone(config.pair_error(p0, d, cfg["model"]))
+        d["engine"]["tp"] = 2
+        self.assertIn("shard", config.pair_error(p1, d, cfg["model"]))
 
     def test_verify_invalidates_stale_success(self):
         from llmd.verify import verify
@@ -104,6 +120,7 @@ class RuntimeTest(unittest.TestCase):
         report.write_text('{"status":"passed"}')
         state = {
             "status": "stopped",
+            "model": {},
             "experiment": self.base,
             "run_id": uuid.uuid4().hex,
             "endpoints": [],
@@ -113,7 +130,7 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(json.loads(report.read_text())["status"], "failed")
 
     def test_overlapping_launches_cannot_claim_the_same_device(self):
-        endpoints = [{"kind": "gpu", "device": 2 * os.getpid()}]
+        endpoints = [{"kind": "gpu", "devices": [2 * os.getpid()]}]
         with (
             runtime.claim_devices(endpoints),
             self.assertRaisesRegex(RuntimeError, "another local launch"),
@@ -145,7 +162,7 @@ class RuntimeTest(unittest.TestCase):
                     {
                         **self.base["endpoints"][0],
                         "id": f"gpu-{i}",
-                        "device": 2 * os.getpid() + i,
+                        "devices": [2 * os.getpid() + i],
                         "port": s.getsockname()[1],
                         "slots": 1,
                     }
@@ -170,7 +187,7 @@ while not pathlib.Path(sys.argv[1]).exists() and time.monotonic() < until:
 sys.exit(7)
 """
 
-        def spec(_model, _engine, ep, **_unused):
+        def spec(_model, ep, **_unused):
             script = launch_script if ep["id"] == "gpu-0" else fail_script
             return {
                 "engine_id": ep["id"],
@@ -178,37 +195,29 @@ sys.exit(7)
                 "env": os.environ,
             }
 
-        cfg = {
+        with contextlib.ExitStack() as hold:
+            ports = {"gateway": ingress_port}
+            for key in ("admin", "epp", "epp_health", "epp_metrics"):
+                s = hold.enter_context(socket.socket())
+                s.bind(("127.0.0.1", 0))
+                ports[key] = s.getsockname()[1]
+        raw = {
             **self.base,
-            "engine": {},
-            "instrumentation": {},
             "endpoints": endpoints,
-            "port": ingress_port,
+            "ports": ports,
+            "cache_root": str(self.work / "cache"),
         }
+        cfg_file = self.work / "experiment.yaml"
+        cfg_file.write_text(yaml.safe_dump(raw))
+        cfg = config.load(cfg_file)
         run_dir = self.work / "run"
         run_dir.mkdir()
-        version_stub = self.work / "router"
-        version_stub.write_text(
-            "#!/bin/sh\necho '"
-            + json.dumps(
-                {
-                    "epp": "v0.5.1",
-                    "gateway_inference_extension": "v1.3.1",
-                    "sidecar_protocol": "NIXLv2-v0.5.1",
-                }
-            )
-            + "'\n"
-        )
-        version_stub.chmod(0o700)
         with (
-            patch.dict(os.environ, LLMD_ROUTER_BIN=str(version_stub)),
-            patch.object(launcher.engines, "model_info", return_value={"name": "stub"}),
+            patch.dict(os.environ, LLMD_BIN_DIR=str(self.bins)),
             patch.object(
                 launcher.engines,
                 "preflight",
-                return_value={
-                    "endpoints": {ep["id"]: {"uuid": ep["id"]} for ep in endpoints}
-                },
+                return_value={e["id"]: {"device": e["id"]} for e in endpoints},
             ),
             patch.object(launcher.engines, "engine_spec", side_effect=spec),
             self.assertRaisesRegex(RuntimeError, "exited with code 7"),

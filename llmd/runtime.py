@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def save(path, value):
@@ -41,23 +42,29 @@ def claim_devices(endpoints):
     # context. The kernel drops these transient Linux socket names on exit.
     with contextlib.ExitStack() as stack:
         for ep in endpoints:
-            device = f"{ep['kind']}{ep['device']}"
-            sock = stack.enter_context(socket.socket(socket.AF_UNIX))
-            try:
-                sock.bind(f"\0hetero-llmd-{os.getuid()}-{device}")
-            except OSError as exc:
-                raise RuntimeError(f"another local launch is using {device}") from exc
+            for index in ep["devices"]:
+                device = f"{ep['kind']}{index}"
+                sock = stack.enter_context(socket.socket(socket.AF_UNIX))
+                try:
+                    sock.bind(f"\0hetero-llmd-{os.getuid()}-{device}")
+                except OSError as exc:
+                    raise RuntimeError(
+                        f"another local launch is using {device}"
+                    ) from exc
         yield
 
 
 def check_ports(ports):
-    for port in ports:
-        with socket.socket() as sock:
+    # Hold every probe socket until the complete topology has been checked.
+    with contextlib.ExitStack() as stack:
+        for host, port in ports:
+            sock = stack.enter_context(socket.socket())
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                sock.bind(("127.0.0.1", port))
+                sock.bind((host, port))
+                sock.listen(1)
             except OSError as exc:
-                raise RuntimeError(f"port {port} unavailable: {exc}") from exc
+                raise RuntimeError(f"{host}:{port} unavailable: {exc}") from exc
 
 
 def spawn(name, argv, env, work, state):
@@ -97,7 +104,14 @@ def wait_ready(checks, processes, timeout):
                 )
         for name, url in list(pending.items()):
             try:
-                fetch(url, timeout=2)
+                if url.startswith("tcp://"):
+                    addr = urlsplit(url)
+                    with socket.create_connection(
+                        (addr.hostname, addr.port), timeout=2
+                    ):
+                        pass
+                else:
+                    fetch(url, timeout=2)
             except (OSError, RuntimeError):
                 continue
             del pending[name]
@@ -105,6 +119,15 @@ def wait_ready(checks, processes, timeout):
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"readiness timeout: {pending}")
             time.sleep(0.5)
+
+
+def gateway_ready(ports, timeout):
+    deadline = time.monotonic() + timeout
+    marker = f"ext_proc::127.0.0.1:{ports['epp']}::health_flags::healthy".encode()
+    while marker not in fetch(f"http://127.0.0.1:{ports['admin']}/clusters")[0]:
+        if time.monotonic() > deadline:
+            raise RuntimeError("Envoy ext_proc upstream did not become healthy")
+        time.sleep(0.1)
 
 
 def owned_processes(run_id, sig=None, *, only=None):
@@ -142,14 +165,28 @@ def owned_processes(run_id, sig=None, *, only=None):
 
 def confirm_listeners(state):
     """Confirm that the processes for this run own all configured HTTP ports."""
-    expected = {state["experiment"]["port"], *(ep["port"] for ep in state["endpoints"])}
+    expected = {tuple(addr) for addr in state["owned_listeners"]}
     sockets = {}
-    for line in Path("/proc/net/tcp").read_text().splitlines()[1:]:
-        columns = line.split()
-        if columns[3] == "0A":
-            port = int(columns[1].split(":")[1], 16)
-            if port in expected:
-                sockets[f"socket:[{columns[9]}]"] = port
+    import ipaddress
+    import sys
+
+    for name in ("tcp", "tcp6"):
+        for line in Path(f"/proc/net/{name}").read_text().splitlines()[1:]:
+            columns = line.split()
+            if columns[3] != "0A":
+                continue
+            raw, port = columns[1].split(":")
+            packed = b"".join(
+                int(raw[i : i + 8], 16).to_bytes(4, sys.byteorder)
+                for i in range(0, len(raw), 8)
+            )
+            address = ipaddress.ip_address(packed)
+            ip = str(getattr(address, "ipv4_mapped", None) or address)
+            sockets[f"socket:[{columns[9]}]"] = {
+                (host, num)
+                for host, num in expected
+                if num == int(port, 16) and (host == ip or address.is_unspecified)
+            }
     found = set()
     for pid in owned_processes(state["run_id"]):
         try:
@@ -162,7 +199,7 @@ def confirm_listeners(state):
             except (FileNotFoundError, PermissionError):
                 continue
             if target in sockets:
-                found.add(sockets[target])
+                found.update(sockets[target])
     if missing := expected - found:
         raise RuntimeError(f"run no longer owns listeners on ports {sorted(missing)}")
 

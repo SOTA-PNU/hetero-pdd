@@ -1,0 +1,32 @@
+router:
+  inferencePool:
+    create: false
+  epp:
+    image:
+      registry: hetero.invalid
+      repository: epp
+      tag: build
+    flags:
+      allow-experimental-plugins: true
+      health-checking: true
+    pluginsConfigFile: epp.yaml
+    pluginsConfig:
+      apiVersion: llm-d.ai/v1
+      kind: EndpointPickerConfig
+      plugins:
+        - type: random-picker
+      schedulingProfiles:
+        - name: default
+          plugins:
+            - pluginRef: random-picker
+  monitoring:
+    prometheus:
+      enabled: false
+      auth:
+        enabled: false
+  modelServers:
+    targetPorts: [{number: 8000}]
+    matchLabels:
+      pdd.sota.dev/pool: pdd-serving
+  proxy:
+    failOpen: false

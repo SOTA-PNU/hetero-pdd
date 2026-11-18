@@ -1,9 +1,8 @@
-model: qwen3-0.6b
-policy: greedy
-port: 18000
-engine:
-  max_model_len: 1024
+apiVersion: hetero-pdd/v2
+model: models/qwen3-0.6b.yaml
+profile: ../llmd/epp/profiles/greedy.yaml
 endpoints:
-  - {id: gpu0, kind: gpu, role: full, device: 0, port: 18001, slots: 2}
-  - {id: npu0, kind: npu, role: full, device: 0, port: 18002, slots: 1}
-verify: {input_tokens: 128, output_tokens: 8, concurrency: 3, requests: 6}
+  - {id: gpu0, backend: cuda, roles: [full], devices: [0], port: 18001}
+  - {id: npu0, backend: rbln, roles: [full], devices: [0], port: 18002}
+instrumentation: {rbln_events: true}
+verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}

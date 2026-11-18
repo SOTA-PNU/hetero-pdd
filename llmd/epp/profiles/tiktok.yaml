@@ -1,0 +1,71 @@
+# Synthetic example cost table. Replace with measurements for the deployed model.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: tiktok
+- type: cost-route-handler
+  parameters:
+    ttlMillis: 5000
+    textBytesPerToken: 4
+    outputPriorTokens: 32
+    maxKvUtilization: 1.0
+    preload: true
+    costs:
+      cuda:
+        prefillMsPerToken: 0.4
+        decodeMsPerToken: 2.0
+        transferMsPerToken: 0.05
+        transferFixedMs: 7
+        remainingDecodeTokens: 64
+        kvBytesPerToken: 131072
+      rbln:
+        prefillMsPerToken: 1.0
+        decodeMsPerToken: 0.5
+        transferMsPerToken: 0.05
+        transferFixedMs: 7
+        remainingDecodeTokens: 64
+        kvBytesPerToken: 131072
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: label-selector-filter
+  name: prefill-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/producer: 'true'
+- type: label-selector-filter
+  name: decode-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/consumer: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+- type: live-state-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: max-score-picker
+- name: prefill
+  plugins:
+  - pluginRef: prefill-capability
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor
+    - pluginRef: live-state-extractor

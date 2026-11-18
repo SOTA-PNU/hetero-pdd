@@ -1,0 +1,12 @@
+images:
+  engine: hetero-pdd-engine:local
+  epp: hetero-pdd/epp:v1
+  sidecar: hetero-pdd/pd-sidecar:v1
+cluster:
+  modelClaim: pdd-models
+  cacheClaim: pdd-compiled
+  runtimeClassName: nvidia
+  # Dedicated same-node IPC validation pool. Restrict to the source GPU UUIDs in production.
+  peerGpuVisibility: all
+  cpu: "4"
+  memory: 16Gi
