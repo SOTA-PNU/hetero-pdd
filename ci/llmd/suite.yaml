@@ -1,0 +1,37 @@
+version: 1
+
+# Paths here are relative to the checkout. Provision the approved site in both jobs.
+# The example under experiments/ contains sample image tags and is not an operational site.
+environments:
+  pdd-lab:
+    target: kubernetes
+    site: ci/llmd/site.yaml
+    serving: [llmd/serving/upstream/standalone.yaml]
+    context_env: LLMD_CI_CONTEXT
+    namespace_env: LLMD_CI_NAMESPACE
+    image_record_env: LLMD_CI_IMAGE_RECORD
+    allowed: {gpu: 1, npu: 1, nodes: [local], gpu_devices: [0], npu_devices: [0]}
+    timeout: 3600
+    collection_timeout: 90
+    cleanup_timeout: 120
+
+reference:
+  profile: llmd/epp/profiles/baseline.yaml
+
+experiments:
+  baseline:
+    path: experiments/baseline.yaml
+    environment: pdd-lab
+  fixed-pdd:
+    path: experiments/fixed-pdd.yaml
+    environment: pdd-lab
+  tiktok:
+    path: experiments/tiktok.yaml
+    environment: pdd-lab
+  qwen2-fixed:
+    path: experiments/qwen2-fixed.yaml
+    environment: pdd-lab
+  pool-2p2d:
+    path: experiments/pool-2p2d.yaml
+    environment: pdd-lab
+    reference: {endpoint: gpu0}

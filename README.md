@@ -16,8 +16,6 @@ This repository provides the hardware plugin that enables vLLM on RBLN NPUs, inc
 
 Built on top of [vLLM’s Plugin System](https://docs.vllm.ai/en/latest/design/plugin_system.html), it allows seamless integration with the vLLM ecosystem and provides high-throughput, low-latency LLM serving on RBLN hardware. Our plugin supports a wide range of popular LLMs and continues to expand to support all features enabled in vLLM, including advanced attention mechanisms.
 
-The heterogeneous PDD experiment on this branch uses the official llm-d runner, Gateway and PD sidecar. [Deployment, model configuration and verification](docs/llmd.md)
-
 ## 🚀 Getting Started
 
 ### 📋 Prerequisites
