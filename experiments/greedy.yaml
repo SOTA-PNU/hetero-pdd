@@ -1,0 +1,9 @@
+model: qwen3-0.6b
+policy: greedy
+port: 18000
+engine:
+  max_model_len: 1024
+endpoints:
+  - {id: gpu0, kind: gpu, role: full, device: 0, port: 18001, slots: 2}
+  - {id: npu0, kind: npu, role: full, device: 0, port: 18002, slots: 1}
+verify: {input_tokens: 128, output_tokens: 8, concurrency: 3, requests: 6}

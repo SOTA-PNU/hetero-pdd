@@ -1,0 +1,8 @@
+model: qwen3-0.6b
+policy: baseline
+port: 18000
+engine:
+  max_model_len: 1024
+endpoints:
+  - {id: gpu0, kind: gpu, role: full, device: 0, port: 18001}
+verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
