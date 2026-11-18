@@ -306,6 +306,11 @@ def render_markdown(summary: dict) -> str:
         "| Step | Status | Seconds | Exit code | Failure reason | Log |",
         "| --- | --- | ---: | ---: | --- | --- |",
     ]
+    if summary.get("profiler") is not None:
+        from tools.hetero.profiler.pdd_summary import key_results
+
+        index = lines.index("## Script execution steps")
+        lines[index:index] = key_results(summary["profiler"], summary["configuration"])
     for name, step in summary["steps"].items():
         lines.append(
             "| "

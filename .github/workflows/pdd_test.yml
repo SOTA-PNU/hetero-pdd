@@ -1,3 +1,4 @@
+# 타임라인은 압축 없는 단일 파일 artifact(timeline-<run_number>.pftrace)로 올라가며 REST API의 run artifacts 목록에서 이름으로 찾을 수 있음
 name: PDD Test
 
 on:
@@ -172,6 +173,36 @@ jobs:
           docker exec "$PDD_CONTAINER" bash -lc \
             'source ./profile_tools_env.sh && "$PDD_TOOLS_PY" tools/hetero/profiler/perfetto_timeline.py --run-dir "$RESULT_DIR/profile" --workload measure'
 
+      - name: Prepare timeline file
+        if: ${{ always() }}
+        id: timeline-file
+        run: |
+          timeline_dir=$(mktemp -d "$RUNNER_TEMP/pdd-timeline.XXXXXX")
+          echo "path=$timeline_dir/timeline-$GITHUB_RUN_NUMBER.pftrace" >> "$GITHUB_OUTPUT"
+          if [[ -d "$RESULT_DIR/profile" ]]; then
+            source_file=$(find "$RESULT_DIR/profile" -type f -name timeline.pftrace -size +0c -print -quit)
+            if [[ -n "$source_file" ]]; then
+              cp -- "$source_file" "$timeline_dir/timeline-$GITHUB_RUN_NUMBER.pftrace"
+            fi
+          fi
+
+      - name: Upload timeline file
+        if: ${{ always() }}
+        id: timeline-upload
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: ${{ steps.timeline-file.outputs.path }}
+          if-no-files-found: ignore
+
+      - name: Link timeline artifact
+        if: ${{ always() && steps.timeline-upload.outputs.artifact-id != '' }}
+        env:
+          ARTIFACT_ID: ${{ steps.timeline-upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.timeline-upload.outputs.artifact-url }}
+        run: |
+          echo "Timeline artifact: timeline-$GITHUB_RUN_NUMBER.pftrace (id $ARTIFACT_ID) $ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Remove PDD container
         if: ${{ always() }}
         run: |
@@ -179,12 +210,26 @@ jobs:
             docker rm -f "$PDD_CONTAINER"
           fi
 
+      - name: Exclude empty artifact files
+        if: ${{ always() }}
+        id: empty
+        run: |
+          {
+            echo "exclusions<<EMPTY_FILES"
+            find "$RESULT_DIR" -type f -empty -printf '!%p\n'
+            echo "EMPTY_FILES"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload PDD results
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pdd-results-${{ github.run_attempt }}
+          if-no-files-found: ignore
           path: |
+            ${{ needs.prepare-run.outputs.result_dir }}/*.log
+            ${{ needs.prepare-run.outputs.result_dir }}/*.env
+            ${{ needs.prepare-run.outputs.result_dir }}/correctness*_response.json
             ${{ needs.prepare-run.outputs.result_dir }}/summary.*
             ${{ needs.prepare-run.outputs.result_dir }}/stages.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/run.json
@@ -193,8 +238,11 @@ jobs:
             ${{ needs.prepare-run.outputs.result_dir }}/profile/trace_wait.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.json
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/profile/*.csv
-            ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline.pftrace
             ${{ needs.prepare-run.outputs.result_dir }}/profile/measure/timeline_validation.json
+
+            !${{ needs.prepare-run.outputs.result_dir }}/pids.env
+            !${{ needs.prepare-run.outputs.result_dir }}/runtime.env
+            ${{ steps.empty.outputs.exclusions }}
 
       - name: Prune old PDD results
         if: ${{ always() }}
