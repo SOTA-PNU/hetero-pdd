@@ -6,3 +6,4 @@ endpoints:
   - {id: npu0, backend: rbln, roles: [full], devices: [0], port: 18002}
 instrumentation: {rbln_events: true}
 verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
+#
