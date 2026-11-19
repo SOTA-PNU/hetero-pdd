@@ -1,0 +1,21 @@
+# Qwen3-0.6B, FP16 HND, 128 tokens/block; one layer allocation holds both K and V.
+physical_npu: 0
+uuid: bc133fcd-240a-473d-b194-8db986cdeb53
+layers: 28
+layer_shape: [2, 32, 8, 1, 128, 128]
+warmup: 5
+samples: 30
+official_mib: [14, 56]
+conditions:
+  flat14: {layout: flat, mib: 14, calls: 1}
+  flat56: {layout: flat, mib: 56, calls: 1}
+  flat56_split: {layout: flat, mib: 56, calls: 56}
+  A1: {layout: kv, ids: [5, 6, 7, 8], max_run: 1}
+  A2: {layout: kv, ids: [5, 6, 7, 8], max_run: 2}
+  A3: {layout: kv, ids: [5, 6, 7, 8], max_run: 4}
+  B1: {layout: kv, ids: [5], max_run: 1}
+  B2: {layout: kv, ids: [5, 6], max_run: 2}
+  # Same backing allocations/offsets as A3, flattened K/V views.
+  flat_layers: {layout: flat_layers, ids: [5, 6, 7, 8], max_run: 4}
+  # Sorted real four-block map from import-ab/repeat-02/coalesced request 0.
+  fragmented: {layout: kv, ids: [2, 20, 29, 31], max_run: 4}
