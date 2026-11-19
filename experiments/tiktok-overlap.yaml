@@ -5,7 +5,17 @@ endpoints:
   - {id: gpu0, backend: cuda, roles: [prefill, full], devices: [0], port: 18001, kv_port: 18101}
   - {id: npu0, backend: rbln, roles: [decode, full], devices: [0], port: 18002, kv_port: 18102, sidecar_port: 18202, sidecar_metrics_port: 18302, engine: {lookahead: {active_decode_limit: 1, lookahead_depth: 1, prefetch_byte_budget: 134217728}}}
 instrumentation: {rbln_events: true}
-verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
+verify:
+  input_tokens: 128
+  output_tokens: 8
+  concurrency: 1
+  requests: 2
+  overlap_probe:
+    anchor_input_tokens: 128
+    anchor_output_tokens: 128
+    following_input_tokens: 64
+    following_output_tokens: 32
+    arrival_offset_ms: 350
 benchmark:
   input_tokens: 128
   output_tokens: 32
