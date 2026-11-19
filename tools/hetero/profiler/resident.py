@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import time
 import uuid
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
+from itertools import chain
 from pathlib import Path
 
 from llmd import runtime, serving
@@ -24,15 +27,31 @@ def _worker_files(resident):
 
 
 def isolated_ports(cfg):
-    # Select distinct free ports together; confirm newly spawned process ownership
-    # before sending requests even if another process races to bind one.
+    # EPP opens outgoing connections before it binds its wildcard listeners.
+    # A bind(0) port released here can be taken by EPP's own client socket.
+    # Probe outside the kernel's ephemeral range, with all reservations held
+    # simultaneously. Startup also confirms ownership of each real listener.
+    kernel = Path("/proc") / "sys/net/ipv4/ip_local_port_range"
+    ephemeral_low, ephemeral_high = map(int, kernel.read_text().split())
+    start = 20000 + secrets.randbelow(10000)
+    ports = chain(range(start, 65536), range(1024, start))
     result = {}
     with ExitStack() as stack:
         for key in cfg["ports"]:
-            host = cfg["host"] if key == "gateway" else "127.0.0.1"
             sock = stack.enter_context(socket.socket())
-            sock.bind((host, 0))
-            result[key] = sock.getsockname()[1]
+            for port in ports:
+                if ephemeral_low <= port <= ephemeral_high:
+                    continue
+                try:
+                    sock.bind(("", port))
+                except OSError as exc:
+                    if exc.errno not in (errno.EADDRINUSE, errno.EACCES):
+                        raise
+                    continue
+                result[key] = port
+                break
+            else:
+                raise RuntimeError("no free non-ephemeral TCP port for native gateway")
     return result
 
 

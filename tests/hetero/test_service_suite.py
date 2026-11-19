@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import socket
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from llmd.engines import MODEL_IDENTITY
 from tools.hetero.profiler import benchmark_answers as answers
 from tools.hetero.profiler import experiment_ci as ci
+from tools.hetero.profiler import resident
 from tools.hetero.profiler import service_suite as suite
 
 
@@ -59,6 +61,18 @@ def recorded(work, route, output, *, revision="first"):
 
 
 class ServiceTests(unittest.TestCase):
+    def test_gateway_listeners_skip_active_and_ephemeral_ports(self):
+        with socket.socket() as active:
+            active.bind(("127.0.0.1", 0))
+            busy = active.getsockname()[1]
+            with (
+                patch.object(resident.secrets, "randbelow", return_value=busy - 20000),
+                patch.object(Path, "read_text", return_value=f"{busy + 1} {busy + 5}"),
+            ):
+                ports = resident.isolated_ports({"ports": {"gateway": 0, "epp": 0}})
+        self.assertEqual(len(set(ports.values())), 2)
+        self.assertTrue(all(p not in range(busy, busy + 6) for p in ports.values()))
+
     def test_external_exact_length_gpu_answers(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
