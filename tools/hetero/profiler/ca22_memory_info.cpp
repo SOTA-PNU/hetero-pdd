@@ -6,17 +6,18 @@
 
 namespace {
 template <typename Shape>
-void write_shape(std::ostream& out, const Shape& values) {
+void write_shape(std::ostream &out, const Shape &values) {
   out << '[';
   for (size_t i = 0; i < values.size(); ++i) {
-    if (i) out << ',';
+    if (i)
+      out << ',';
     out << values[i];
   }
   out << ']';
 }
-}  // namespace
+} // namespace
 
-extern "C" const char* ca22_memory_info(uint64_t address) {
+extern "C" const char *ca22_memory_info(uint64_t address) {
   rbln::MemoryInfo info{};
   if (rbln::rbln_get_memory_info(address, info) != RBLNRetCode_SUCCESS) {
     return nullptr;
