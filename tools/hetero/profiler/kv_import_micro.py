@@ -113,7 +113,7 @@ def vendor_test(cfg, out):
             args = [
                 binary,
                 "--tc=3",
-                f"--device_name={device}",
+                "--device_name=0",  # Any NPU type; the ID list selects the card.
                 f"--npu_id_list={device}",
                 f"--test_size={size}M",
                 f"--iteration_cnt={count}",
