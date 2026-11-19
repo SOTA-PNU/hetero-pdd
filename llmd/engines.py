@@ -472,6 +472,9 @@ def engine_spec(model, ep, *, work, engine_id, cache, peer_devices, instrumentat
             RBLN_ROOT_IP=ep["host"],
             RBLN_LOCAL_IP=ep["host"],
         )
+        library = os.environ.get("VLLM_RBLN_KV_CANONICAL_LIBRARY")
+        if opts.get("canonicalize_kv_import") and library:
+            env["VLLM_RBLN_KV_CANONICAL_LIBRARY"] = library
     if "prefill" in ep["roles"] or "decode" in ep["roles"]:
         extra = {"kv_recompute_threshold": 0}
         if "lookahead" in opts:

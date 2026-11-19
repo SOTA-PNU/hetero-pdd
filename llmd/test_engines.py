@@ -33,7 +33,10 @@ class EngineTests(unittest.TestCase):
 
     def test_connector_identity_and_peer_devices(self):
         with patch.dict(
-            "os.environ", CUDA_PY="/cuda/bin/python", RBLN_PY="/rbln/bin/python"
+            "os.environ",
+            CUDA_PY="/cuda/bin/python",
+            RBLN_PY="/rbln/bin/python",
+            VLLM_RBLN_KV_CANONICAL_LIBRARY="/opt/ca22/helper.so",
         ):
             for ep in self.cfg["endpoints"]:
                 if ep["kind"] == "npu":
@@ -57,6 +60,9 @@ class EngineTests(unittest.TestCase):
                     self.assertEqual(env["VLLM_RBLN_COALESCE_KV_IMPORT"], "1")
                     self.assertEqual(env["VLLM_RBLN_KV_IMPORT_THREADS"], "8")
                     self.assertEqual(env["VLLM_RBLN_CANONICALIZE_KV_IMPORT"], "1")
+                    self.assertEqual(
+                        env["VLLM_RBLN_KV_CANONICAL_LIBRARY"], "/opt/ca22/helper.so"
+                    )
                     self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "1,3")
                     self.assertEqual(transfer["kv_buffer_device"], "cpu")
                 ep["roles"] = ["full"]
