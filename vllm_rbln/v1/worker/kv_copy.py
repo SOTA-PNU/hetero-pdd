@@ -56,7 +56,13 @@ def copy_kv_blocks(
     profile = h2d and metrics_v2.EVENTS_ENABLED
     use_runs = coalesce and h2d and not reorder and len(src_block_ids) > 1
     if use_runs:
-        runs = block_runs(src_block_ids)
+        # Host and device each use the same block ID. For unique IDs each
+        # write has a distinct destination in a separate address space, so a
+        # recycled, descending allocation can be copied in physical order.
+        ids = src_block_ids
+        if len(set(ids)) == len(ids):
+            ids = sorted(ids)
+        runs = block_runs(ids)
         lowest, highest = min(src_block_ids), max(src_block_ids)
     copy_ns = reorder_ns = calls = 0
     for name, dst_cache in dst_kv_caches.items():

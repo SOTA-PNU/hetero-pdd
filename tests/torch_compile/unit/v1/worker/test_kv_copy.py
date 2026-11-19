@@ -77,3 +77,27 @@ def test_reorder_stays_per_block_and_index_errors_are_preserved():
             reorder=False,
             coalesce=True,
         )
+
+
+def test_recycled_descending_ids_merge_only_requested_physical_neighbors(monkeypatch):
+    src = torch.arange(2 * 16 * 4).reshape(2, 16, 4)
+    dst = torch.full_like(src, -1)
+    blocks = [3, 10, 9, 8]
+    monkeypatch.setattr(kv_copy.metrics_v2, "EVENTS_ENABLED", True)
+    stats = []
+    monkeypatch.setattr(
+        kv_copy.metrics_v2, "add_copy_stats", lambda *a: stats.append(a)
+    )
+    kv_copy.copy_kv_blocks(
+        {"layer": src},
+        {"layer": dst},
+        blocks,
+        blocks,
+        "h2d",
+        reorder=False,
+        coalesce=True,
+    )
+    expected = torch.full_like(dst, -1)
+    expected[:, blocks] = src[:, blocks]
+    assert torch.equal(dst, expected)
+    assert stats[0][2:] == (4, 4)  # two runs across K and V
