@@ -46,6 +46,10 @@ compiler가 계산한 양 끝의 동일한 model/KV group, 서로 다른 ID, 각
 
 한 EPP 안에서 경로 선택과 단계별 예약이 같은 lock을 사용한다. 슬롯별 대기 W에는 이미 배정한 요청의 실제 길이와 예측 단계 시간이 반영된다. 들어온 stream data event 수로 잔여 decode 추정을 갱신한다. 여러 토큰이 하나의 event로 합쳐지면 근사값이다. 동일 scrape에 보일 수 있는 local 요청 수를 관측 queue/running 합계에서 빼고, 출처를 식별할 수 없는 초과 작업에만 `remainingDecodeTokens`를 적용한다. 값이 없으면 출력 prior를 쓴다. 정상 완료·오류·연결 종료에 대한 최종 ResponseBody hook이 예약을 해제한다. 이미 종료된 요청의 시각만 다음 유효 scrape와 대응시키기 위해 보관한다. 실제 request ID가 없는 외부 scrape와 다른 EPP replica의 작업량은 추정에 의존한다.
 
+스트리밍 요청에는 첫 SSE data event가 올 때까지 미관측 출력 토큰의 decode 비용을 남겨 둔다. GPU prefill 발행 순서와 NPU 입장 순서가 달라져도 기다린 시간만으로 출력이 끝났다고 계산하지 않는다. 응답 헤더와 빈 chunk는 decode 확인 신호로 쓰지 않는다. 이후 누적 SSE event 수로 남은 비용을 갱신한다. 비스트리밍 요청은 시간 기반 추정을 유지한다.
+
+`maxPreloadWaitMs`는 이미 PDD가 선택된 요청이 앞 스트림의 첫 출력을 기다릴 수 있는 상한이고 기본값은 0이다. GPU prefill과 host 수신을 끝낼 수 있는 예상 여유 시간까지로 실제 대기를 제한한다. 대기 중에는 예약과 lock을 점유하지 않는다. 앞 스트림에서 첫 data event나 종료 신호가 오거나 상한에 도달하면 모든 후보, headroom과 예약을 다시 확인한다. `PreloadGateMs`는 실제 EPP 대기 시간이며 TTFT·완료 예측에도 포함된다.
+
 `objective: minimumCompletion`은 예상 완료 시간을 최소화한다. `workConserving`은 이 EPP에 미완료 요청이 있고 후보의 primary 슬롯 사용 가능 여부가 다르면 즉시 시작 가능한 primary를 우선한다. 두 경우 모두 선택적 `x-pdd-ttft-ms`의 목표 초과량이 우선하고, 동률은 native profile 점수로 푼다. `hetero_route_prediction`에 입력/출력 추정 근거, 단계별 ms, 예측한 host 수신 단축 시간이 기록된다. `request_id`로 클라이언트 결과와 `hetero_route_finished`를 연결한다. 실제 overlap 판정에는 worker 이벤트와 admission 기록을 사용한다.
 
 ## 연구 구현의 대응 관계

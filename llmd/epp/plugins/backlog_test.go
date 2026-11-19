@@ -148,3 +148,106 @@ func TestStrictCostConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestPendingStreamPreservesDecodeTailAcrossAdmissionReordering(t *testing.T) {
+	// Two C2 PDD requests were issued together, but the engine completed the
+	// second-issued one first. The first-issued one has not emitted any data
+	// even though its scheduled completion time is already in the past.
+	now := time.Now()
+	h := costPolicy{costConfig: costConfig{Prior: 32}, reservations: map[string]reservation{}}
+	assigned := now.Add(-400 * time.Millisecond)
+	waiting := reservation{assigned: assigned, primary: newStage("d", assigned, 30, 30, 380), first: at(assigned, 85), output: 32, decodeMs: 9.5, awaitingFirst: make(chan struct{})}
+	h.reservations["wait"] = waiting
+	scrape := liveState{At: now.Add(-20 * time.Millisecond), Queue: 1}
+	wait, windows := h.backlog("d", 1, costs{Decode: 9.5}, scrape, now)
+	if wait != 294.5 || len(windows) != 0 {
+		t.Fatal("queued streaming request was drained or granted before first data", wait, windows)
+	}
+	req := &s.InferenceRequest{RequestID: "wait"}
+	h.ResponseHeader(context.Background(), req, &rc.Response{}, nil)
+	h.ResponseBody(context.Background(), req, &rc.Response{StartOfStream: true}, nil)
+	if h.reservations["wait"].awaitingFirst == nil {
+		t.Fatal("HTTP headers or an empty chunk granted decode")
+	}
+	h.ResponseBody(context.Background(), req, &rc.Response{StreamedEvents: 3}, nil)
+	current := h.reservations["wait"]
+	if current.awaitingFirst != nil || current.primary.end.Sub(current.primary.start) != 275500*time.Microsecond {
+		t.Fatal(current)
+	}
+	select {
+	case <-waiting.awaitingFirst:
+	default:
+		t.Fatal("waiter missed progress")
+	}
+	waiting.awaitingFirst = nil
+	h.reservations["wait"] = waiting
+	wait, windows = h.backlog("d", 1, costs{Decode: 9.5}, scrape, now)
+	if wait != 9.5 || len(windows) != 1 {
+		t.Fatal("non-streaming projection changed", wait, windows)
+	}
+}
+
+func TestPreloadGateRepricesAfterActualFirstData(t *testing.T) {
+	h := costPolicy{costConfig: costConfig{TTL: 5000, Prior: 32, MaxKV: 1, TextBytes: 4, Preload: true, MaxPreloadWaitMs: 200, Costs: map[string]costs{"p": {PrefillFixed: 1, Decode: 1, Setup: 8}, "d": {Decode: 10, Bytes: 4}}}, reservations: map[string]reservation{}}
+	now := time.Now()
+	l := liveState{At: now, HostSlots: 1, HostBytes: 1000}
+	pe := ep("p", map[string]string{"producer": "true", "full": "true"}, l)
+	de := ep("d", map[string]string{"peer-p": "true", "consumer": "true"}, l)
+	pair := profiles(nil, []s.Endpoint{pe}, []s.Endpoint{de})
+	old := now.Add(-time.Second)
+	req := &s.InferenceRequest{RequestID: "prior"}
+	prior := reservation{primary: newStage("d", old, 0, 0, 380), assigned: old, first: at(old, 90), output: 32, decodeMs: 10, awaitingFirst: make(chan struct{})}
+	h.reservations["prior"] = prior
+	// The already winning full route bypasses the gate even with a pending
+	// remote stream. Its price and target match immediate dispatch.
+	full := profiles([]s.Endpoint{pe}, []s.Endpoint{pe}, []s.Endpoint{de})
+	r := &s.InferenceRequest{RequestID: "full"}
+	result, err := h.ProcessResults(context.Background(), r, full)
+	price, _ := s.ReadRequestAttribute[estimate](r, estimateKey)
+	if err != nil || result.PrimaryProfileName != "full" || price.PreloadGateMs != 0 {
+		t.Fatal(result, price, err)
+	}
+	h.ResponseBody(context.Background(), r, &rc.Response{EndOfStream: true}, nil)
+	resultCh := make(chan error, 1)
+	r = &s.InferenceRequest{RequestID: "following"}
+	go func() { _, err := h.ProcessResults(context.Background(), r, pair); resultCh <- err }()
+	// This request cannot complete the gate yet. Passing this point means
+	// the prior stream can acquire the same policy lock and signal progress.
+	select {
+	case err := <-resultCh:
+		t.Fatalf("returned before evidence: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	h.ResponseBody(context.Background(), req, &rc.Response{StreamedEvents: 1}, nil)
+	if err = <-resultCh; err != nil {
+		t.Fatal(err)
+	}
+	price, _ = s.ReadRequestAttribute[estimate](r, estimateKey)
+	if !price.Preload || price.PreloadGateMs <= 0 || price.DecodeWaitMs < 200 {
+		t.Fatal(price)
+	}
+	h.ResponseBody(context.Background(), r, &rc.Response{EndOfStream: true}, nil)
+	h.ResponseBody(context.Background(), req, &rc.Response{EndOfStream: true}, nil)
+	// A canceled gate must not acquire a device or a host credit.
+	prior.awaitingFirst = make(chan struct{})
+	h.reservations["prior"] = prior
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+	_, err = h.ProcessResults(ctx, &s.InferenceRequest{RequestID: "canceled"}, pair)
+	if err == nil || len(h.reservations) != 1 {
+		t.Fatal(err, h.reservations)
+	}
+	h.MaxPreloadWaitMs = 1 // Missing SSE does not block indefinitely.
+	r = &s.InferenceRequest{RequestID: "timeout"}
+	_, err = h.ProcessResults(context.Background(), r, pair)
+	price, _ = s.ReadRequestAttribute[estimate](r, estimateKey)
+	if err != nil || price.Preload || price.PreloadGateMs == 0 {
+		t.Fatal(err, price)
+	}
+	h.ResponseBody(context.Background(), req, &rc.Response{EndOfStream: true, TerminationCause: rc.TerminationCauseError}, nil)
+	select {
+	case <-prior.awaitingFirst:
+	default:
+		t.Fatal("EOS failed to release waiter")
+	}
+}

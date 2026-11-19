@@ -19,13 +19,13 @@ import (
 var estimateKey = api.NewDataKey("hetero.route-estimate", "cost-route-handler")
 
 type estimate struct {
-	Policy                                                               string
-	Input, Output                                                        int
-	InputSource, OutputSource                                            string
-	PrefillMs, PrefillWaitMs, ImportMs, DispatchMs, HiddenReceiveMs      float64
-	Priority                                                             int
-	TTFTMs, FinishMs, DecodeWaitMs, TransferMs, TTFTGoalMs, PreloadBytes float64
-	Preload                                                              bool
+	Policy                                                                         string
+	Input, Output                                                                  int
+	InputSource, OutputSource                                                      string
+	PrefillMs, PrefillWaitMs, ImportMs, DispatchMs, HiddenReceiveMs, PreloadGateMs float64
+	Priority                                                                       int
+	TTFTMs, FinishMs, DecodeWaitMs, TransferMs, TTFTGoalMs, PreloadBytes           float64
+	Preload                                                                        bool
 }
 type costs struct {
 	PrefillFixed  float64  `json:"prefillFixedMs"`
@@ -56,14 +56,15 @@ type linkCost struct {
 type costConfig struct {
 	Links map[string]map[string]linkCost `json:"links"`
 
-	Objective  string           `json:"objective"`
-	Costs      map[string]costs `json:"costs"`
-	TTL        int              `json:"ttlMillis"`
-	Prior      int              `json:"outputPriorTokens"`
-	TextBytes  float64          `json:"textBytesPerToken"`
-	MaxKV      float64          `json:"maxKvUtilization"`
-	Preload    bool             `json:"preload"`
-	ValidUntil *time.Time       `json:"validUntil"`
+	Objective        string           `json:"objective"`
+	Costs            map[string]costs `json:"costs"`
+	TTL              int              `json:"ttlMillis"`
+	Prior            int              `json:"outputPriorTokens"`
+	TextBytes        float64          `json:"textBytesPerToken"`
+	MaxKV            float64          `json:"maxKvUtilization"`
+	MaxPreloadWaitMs float64          `json:"maxPreloadWaitMs"`
+	Preload          bool             `json:"preload"`
+	ValidUntil       *time.Time       `json:"validUntil"`
 }
 type costPolicy struct {
 	named
@@ -79,7 +80,7 @@ func newCostPolicy(n named, d *json.Decoder) (api.Plugin, error) {
 	if err := decode(d, &c); err != nil {
 		return nil, err
 	}
-	if c.TTL <= 0 || c.Prior < 1 || c.TextBytes <= 0 || c.MaxKV <= 0 || c.MaxKV > 1 || len(c.Costs) == 0 {
+	if c.MaxPreloadWaitMs < 0 || c.TTL <= 0 || c.Prior < 1 || c.TextBytes <= 0 || c.MaxKV <= 0 || c.MaxKV > 1 || len(c.Costs) == 0 {
 		return nil, fmt.Errorf("invalid TTL, output prior, text ratio, KV ceiling, or empty costs")
 	}
 	if c.Objective != "minimumCompletion" && c.Objective != "workConserving" {
@@ -230,22 +231,57 @@ func (h *costPolicy) ProcessResults(ctx context.Context, r *s.InferenceRequest, 
 	base := h.features(r)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	var gated time.Duration
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		now := time.Now()
+		if h.ValidUntil != nil && !now.Before(*h.ValidUntil) {
+			return nil, fmt.Errorf("routing cost table expired at %s", h.ValidUntil)
+		}
+		if _, exists := h.reservations[r.RequestID]; exists {
+			return nil, fmt.Errorf("request %q already scheduled", r.RequestID)
+		}
+		h.pruneRetired(now)
+		selection, chosen, lease := h.choose(base, results, now, millis(gated))
+		if selection == nil {
+			return nil, fmt.Errorf("no eligible full endpoint or compatible pair with fresh queue, running, KV and matching cost rows")
+		}
+		if gated == 0 {
+			if signal, limit := h.preloadGate(selection, chosen, now); signal != nil && limit > 0 {
+				timer := time.NewTimer(limit)
+				h.mu.Unlock()
+				select {
+				case <-signal:
+				case <-timer.C:
+				case <-ctx.Done():
+				}
+				timer.Stop()
+				h.mu.Lock()
+				gated = time.Since(now)
+				continue
+			}
+		}
+		lease.assigned = now
+		if r.Body != nil && r.Body.Stream {
+			lease.awaitingFirst = make(chan struct{})
+		}
+		h.reservations[r.RequestID] = lease
+		r.PutAttribute(estimateKey, chosen)
+		return selection, nil
 	}
-	now := time.Now()
-	if h.ValidUntil != nil && !now.Before(*h.ValidUntil) {
-		return nil, fmt.Errorf("routing cost table expired at %s", h.ValidUntil)
-	}
-	if _, exists := h.reservations[r.RequestID]; exists {
-		return nil, fmt.Errorf("request %q already scheduled", r.RequestID)
-	}
-	h.pruneRetired(now)
+}
+
+func (h *costPolicy) choose(base estimate, results map[string]*s.ProfileRunResult, now time.Time, gateMs float64) (*s.SchedulingResult, estimate, reservation) {
 	var selection *s.SchedulingResult
 	var chosen estimate
 	var lease reservation
 	var winningScore float64
 	consider := func(res *s.SchedulingResult, e estimate, work reservation, score float64) {
+		e.PreloadGateMs = gateMs
+		e.TTFTMs += gateMs
+		e.FinishMs += gateMs
 		if selection == nil || h.prefer(e, chosen, score, winningScore) {
 			selection, chosen, lease, winningScore = res, e, work, score
 		}
@@ -324,16 +360,19 @@ func (h *costPolicy) ProcessResults(ctx context.Context, r *s.InferenceRequest, 
 			consider(pairResult(p.e, d.e), e, work, p.score+d.score)
 		}
 	}
-	if selection == nil {
-		return nil, fmt.Errorf("no eligible full endpoint or compatible pair with fresh queue, running, KV and matching cost rows")
-	}
-	lease.assigned = now
-	h.reservations[r.RequestID] = lease
-	r.PutAttribute(estimateKey, chosen)
-	return selection, nil
+	return selection, chosen, lease
 }
 
-func (h *costPolicy) ResponseBody(_ context.Context, r *s.InferenceRequest, resp *rc.Response, _ *dl.EndpointMetadata) {
+func (h *costPolicy) ResponseHeader(_ context.Context, r *s.InferenceRequest, _ *rc.Response, _ *dl.EndpointMetadata) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if work, ok := h.reservations[r.RequestID]; ok && work.awaitingFirst != nil {
+		work.headers = time.Now()
+		h.reservations[r.RequestID] = work
+	}
+}
+
+func (h *costPolicy) ResponseBody(ctx context.Context, r *s.InferenceRequest, resp *rc.Response, _ *dl.EndpointMetadata) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	work, ok := h.reservations[r.RequestID]
@@ -341,6 +380,14 @@ func (h *costPolicy) ResponseBody(_ context.Context, r *s.InferenceRequest, resp
 		return
 	} // includes repeated EOS
 	now := time.Now()
+	if work.awaitingFirst != nil && (resp.StreamedEvents > 0 || resp.EndOfStream) {
+		close(work.awaitingFirst)
+		work.awaitingFirst = nil
+		if resp.StreamedEvents > 0 && !resp.EndOfStream {
+			work.first = now
+			log.FromContext(ctx).Info("hetero_first_stream_event", "request_id", r.Headers["x-request-id"], "first_data_ms", millis(now.Sub(work.assigned)), "received_headers", !work.headers.IsZero())
+		}
+	}
 	if resp.EndOfStream {
 		// llm-d sends this hook on upstream error, cancellation and eviction.
 		delete(h.reservations, r.RequestID)

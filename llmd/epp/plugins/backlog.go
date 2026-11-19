@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	s "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 	"math"
 	"slices"
 	"strconv"
@@ -15,10 +16,11 @@ type stage struct {
 	visible, start, end time.Time
 }
 type reservation struct {
-	producer, primary stage
-	assigned, first   time.Time
-	bytes, decodeMs   float64
-	output            int
+	producer, primary        stage
+	assigned, first, headers time.Time
+	awaitingFirst            chan struct{}
+	bytes, decodeMs          float64
+	output                   int
 }
 
 func at(now time.Time, ms float64) time.Time {
@@ -74,12 +76,22 @@ func (h *costPolicy) backlog(id string, slots int, cost costs, live liveState, n
 			if !d.visible.After(live.At) {
 				localAtScrape++
 			}
-			if !d.end.After(now) {
-				d.end = at(now, cost.Decode)
-				d.start = now
+			if r.awaitingFirst != nil {
+				// No SSE data has arrived. Elapsed queue/transfer time cannot
+				// consume the unobserved output tail, even when issue order
+				// differs from the backend's actual admission order.
+				floor := at(now, float64(max(0, r.output-1))*r.decodeMs)
+				if d.end.Before(floor) {
+					d.end = floor
+				}
+			} else {
+				if !d.end.After(now) {
+					d.start = now
+					d.end = at(now, cost.Decode)
+				}
+				decoding = append(decoding, stage{start: r.first, end: d.end})
 			}
 			pending = append(pending, d)
-			decoding = append(decoding, stage{start: r.first, end: d.end})
 		}
 	}
 	unknown := max(0, int(live.Queue+live.Running)-localAtScrape)
@@ -141,4 +153,35 @@ func (h *costPolicy) credit(e pricedEndpoint, bytes float64) bool {
 		free -= held
 	}
 	return bytes > 0 && slots >= 1 && free >= bytes
+}
+
+// Only an already preferred split may wait for evidence of a real predecessor
+// decode. The deadline is capped by the apparent slack to issue GPU prefill
+// and host receive before decoder availability. No slot is held while waiting.
+func (h *costPolicy) preloadGate(selection *s.SchedulingResult, e estimate, now time.Time) (<-chan struct{}, time.Duration) {
+	if !h.Preload || h.MaxPreloadWaitMs == 0 || e.Preload || selection.PrimaryProfileName != "decode" {
+		return nil, 0
+	}
+	ready := e.PrefillWaitMs + e.PrefillMs + e.DispatchMs
+	slack := math.Min(h.MaxPreloadWaitMs, e.DecodeWaitMs-ready-e.TransferMs)
+	if slack <= 0 || e.PreloadBytes <= 0 {
+		return nil, 0
+	}
+	d := selection.PrimaryEndpoint()
+	state, ok := readLive(d, now, time.Duration(h.TTL)*time.Millisecond)
+	if !ok || state.HostSlots < 1 || state.HostBytes < e.PreloadBytes {
+		return nil, 0
+	}
+	var prior reservation
+	for _, r := range h.reservations {
+		// Consider only an unconfirmed stream that would leave enough decode
+		// time to stage this request after the first event.
+		if r.primary.id != endpointID(d) || r.awaitingFirst == nil || float64(r.output-1)*r.decodeMs <= ready {
+			continue
+		}
+		if prior.awaitingFirst == nil || r.assigned.Before(prior.assigned) {
+			prior = r
+		}
+	}
+	return prior.awaitingFirst, time.Duration(slack * float64(time.Millisecond))
 }
