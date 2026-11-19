@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Event
 from typing import TYPE_CHECKING, Any
 
@@ -55,6 +55,9 @@ from vllm_rbln.logger import init_logger
 from vllm_rbln.v1.worker import metrics_v2
 
 if TYPE_CHECKING:
+    from vllm.distributed.kv_transfer.kv_connector.v1.nixl.metadata import (
+        TransferHandle,
+    )
     from vllm.v1.kv_cache_interface import KVCacheConfig
 
 logger = init_logger(__name__)
@@ -132,7 +135,9 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
                 + lookahead["lookahead_depth"],
                 thread_name_prefix="nixl-host-recv",
             )
-            self._polls = {}
+            self._polls: dict[
+                str, tuple[list[TransferHandle], Future[tuple[str, int | None, int]]]
+            ] = {}
 
         self._pending_kv_caches: dict[str, torch.Tensor] | None = None
 
