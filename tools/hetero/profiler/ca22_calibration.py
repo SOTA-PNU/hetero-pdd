@@ -121,7 +121,7 @@ def collect(folder, state, route, rows):
         rid = row["request_id"]
         a = access[rid]
         target = eps["cuda" if route == "cuda" else "rbln"]
-        port = target["sidecar_port"] if route == "pdd" else target["port"]
+        port = target.get("sidecar_port") or target["port"]
         if (
             a["http_status"] != 200
             or a["target"] != target["id"]
