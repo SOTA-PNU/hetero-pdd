@@ -95,3 +95,32 @@ def test_cpu_or_unvalidated_library_falls_back(monkeypatch, tmp_path):
         assert kv_canonical.copy_if_supported(cpu, cpu.clone()) == (0, 0, 0, 0)
     finally:
         kv_canonical._library.cache_clear()
+
+
+def test_source_sample_emits_bounded_counts_once(monkeypatch):
+    monkeypatch.setattr(kv_canonical._scratch, "sampled", False, raising=False)
+    events = []
+    monkeypatch.setattr(
+        kv_canonical.metrics_v2,
+        "record_event",
+        lambda kind, **data: events.append((kind, data)),
+    )
+    bits = torch.zeros(4100, dtype=torch.int16)
+    bits[1:4096:2] = 0x3C01
+    bits[4096:] = 0x3C01
+    canonical = bits + (bits & 1)
+    canonical[1] = bits[1]
+    for _ in range(2):
+        kv_canonical._sample_once(
+            bits.view(torch.float16), canonical.view(torch.float16)
+        )
+    assert events == [
+        (
+            "kv_canonical_source_sample",
+            {
+                "sampled_elements": 4096,
+                "changed_elements": 2047,
+                "mantissa_lsb_one": 2048,
+            },
+        )
+    ]

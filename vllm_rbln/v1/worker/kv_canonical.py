@@ -8,9 +8,11 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from vllm_rbln.logger import init_logger
+from vllm_rbln.v1.worker import metrics_v2
 from vllm_rbln.v1.worker.build_kv_canonical import default_library, verified_mapping
 
 _LIMIT = 1 << 20  # Maximum live scratch per importing thread.
@@ -106,6 +108,25 @@ def _pushes(lib) -> tuple[int, int]:
     return count.value, size.value
 
 
+def _sample_once(source: torch.Tensor, prepared: torch.Tensor) -> None:
+    if getattr(_scratch, "sampled", False):
+        return
+    _scratch.sampled = True
+    try:
+        # Only CPU views. Publish aggregate counts from the first accepted
+        # slice on this importing thread; never retain KV values or references.
+        original = source.view(torch.int16).reshape(-1)[:4096].numpy()
+        canonical = prepared.view(torch.int16).reshape(-1)[:4096].numpy()
+        metrics_v2.record_event(
+            "kv_canonical_source_sample",
+            sampled_elements=int(original.size),
+            changed_elements=int(np.count_nonzero(original != canonical)),
+            mantissa_lsb_one=int(np.count_nonzero(original & 1)),
+        )
+    except (AttributeError, RuntimeError, ValueError) as exc:
+        _log.warning("Could not record the CA22 KV source sample: %s", exc)
+
+
 def copy_if_supported(
     source: torch.Tensor, target: torch.Tensor, *, profile: bool = False
 ) -> tuple[int, int, int, int]:
@@ -173,4 +194,6 @@ def copy_if_supported(
             "destination or push evidence changed; replay original", source, target, lib
         )
         return 0, scratch.nbytes, 1, prep_ns
+    if profile and metrics_v2.EVENTS_ENABLED:
+        _sample_once(source, prepared)
     return source.nbytes, scratch.nbytes, 1, prep_ns
