@@ -47,7 +47,7 @@ def _log(path, selector, kinds):
 
 
 def _worker(work, endpoint):
-    events = defaultdict(lambda: defaultdict(list))
+    events: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     native_ids = defaultdict(set)
     steps = []
     for path in sorted((work / "events" / endpoint).glob("events_*.jsonl")):
@@ -209,13 +209,16 @@ def analyze_routes(work: Path) -> dict:
     workers = {
         e: _worker(work, e) for e, meta in endpoints.items() if meta["kind"] == "npu"
     }
-    decisions, actual = Counter(), Counter()
-    errors = defaultdict(lambda: defaultdict(list))
+    decisions: Counter[str] = Counter()
+    actual: Counter[str] = Counter()
+    errors: dict[str, dict[str, list[tuple[float, float]]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     requests = []
-    warmed = set()
-    measured_paths = set()
+    warmed: set[tuple[str, str, bool]] = set()
+    measured_paths: set[tuple[str, str, bool]] = set()
     profile = work / "profile"
-    measured_sample = next(live_rows(profile / "requests.jsonl"), {})
+    measured_sample: dict = next(live_rows(profile / "requests.jsonl"), {})
     shape = (
         measured_sample.get("requested_input_tokens"),
         measured_sample.get("requested_output_tokens"),
@@ -237,7 +240,7 @@ def analyze_routes(work: Path) -> dict:
                     if worker
                     else ()
                 )
-                staged = any(
+                staged = worker is not None and any(
                     worker[0][r]["PREPARE_ALLOCATED_RECV_QUEUED"] for r in native_ids
                 )
                 path = "pdd" if is_pdd else f"{target['kind']}_full"

@@ -108,11 +108,13 @@ class Codec:
         subprocess.run(argv, check=True)
         save(directory / "codec-build.json", argv)
         loaded = ctypes.CDLL(str(library.resolve()))
-        for name in ("canonical", "lanes", "decode", "batch"):
-            fn = getattr(loaded, name)
+        self.canonical = loaded.canonical
+        self.lanes = loaded.lanes
+        self.decode = loaded.decode
+        self.batch = loaded.batch
+        for fn in (self.canonical, self.lanes, self.decode, self.batch):
             fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t]
             fn.restype = None
-            setattr(self, name, fn)
         if implementation == "worker":
             from vllm_rbln.v1.worker.kv_canonical import _library
 
@@ -171,7 +173,7 @@ def cpu_profile(cfg, codec, out):
         dest, tmp, reference = (np.empty_like(dense) for _ in range(3))
         codec.array(codec.lanes, dense, reference)
         names = ["integer", "normal", "normal_with_prep", "prep_only"]
-        trials = {name: [] for name in names}
+        trials: dict[str, list[int]] = {name: [] for name in names}
         for repeat in range(-cfg["warmup"], cfg["cpu_samples"]):
             for name in order(names, repeat):
                 start = time.perf_counter_ns()
