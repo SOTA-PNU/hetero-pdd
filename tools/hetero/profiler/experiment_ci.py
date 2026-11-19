@@ -19,7 +19,10 @@ from tools.hetero.profiler.common import live_rows
 from tools.hetero.profiler.pdd_summary import folded, key_results, metric_table, table
 
 ROOT = Path(__file__).resolve().parents[3]
-REFERENCES = (ROOT / "experiments/qwen3-baseline.yaml", ROOT / "experiments/qwen2-baseline.yaml")
+REFERENCES = (
+    ROOT / "experiments/qwen3-baseline.yaml",
+    ROOT / "experiments/qwen2-baseline.yaml",
+)
 PERFORMANCE_BASELINE = ROOT / "experiments/baseline-hetero.yaml"
 SEED = 20260924
 
@@ -129,7 +132,9 @@ def command(*args: str) -> None:
 def workload_config(cfg: dict) -> dict:
     verify = cfg["verify"]
     max_len = min(ep["engine"]["max_model_len"] for ep in cfg["endpoints"])
-    output_tokens = min(max(32, verify["output_tokens"]), max_len - verify["input_tokens"])
+    output_tokens = min(
+        max(32, verify["output_tokens"]), max_len - verify["input_tokens"]
+    )
     if output_tokens < 2:
         raise ValueError("profiling needs room for at least two output tokens")
     return {
@@ -144,19 +149,32 @@ def benchmark_args(cfg: dict, work: Path, name: str, workload: dict) -> list[str
     model = engines.model_info(cfg["model"], cfg)
     endpoint = f"http://{cfg['host']}:{cfg['ports']['gateway']}"
     return [
-        "-m", "tools.hetero.loadgen",
-        "--endpoint", endpoint,
-        "--target", name,
-        "--concurrency", str(workload["concurrency"]),
-        "--model", model["name"],
-        "--tokenizer", model["tokenizer_path"],
-        "--input-tokens", str(workload["input_tokens"]),
-        "--output-tokens", str(workload["output_tokens"]),
-        "--requests", str(workload["requests"]),
-        "--warmup-per-endpoint", "2",
-        "--seed", str(SEED),
-        "--workload", "experiment-comparison",
-        "--run-dir", str(work / "profile"),
+        "-m",
+        "tools.hetero.loadgen",
+        "--endpoint",
+        endpoint,
+        "--target",
+        name,
+        "--concurrency",
+        str(workload["concurrency"]),
+        "--model",
+        model["name"],
+        "--tokenizer",
+        model["tokenizer_path"],
+        "--input-tokens",
+        str(workload["input_tokens"]),
+        "--output-tokens",
+        str(workload["output_tokens"]),
+        "--requests",
+        str(workload["requests"]),
+        "--warmup-per-endpoint",
+        "2",
+        "--seed",
+        str(SEED),
+        "--workload",
+        "experiment-comparison",
+        "--run-dir",
+        str(work / "profile"),
     ]
 
 
@@ -175,21 +193,34 @@ def run_service(
     try:
         steps.run(
             f"{name}: start",
-            command, "-m", "llmd", "start", str(experiment), "--work-dir", str(work),
+            command,
+            "-m",
+            "llmd",
+            "start",
+            str(experiment),
+            "--work-dir",
+            str(work),
         )
         verify = ["-m", "llmd", "verify", "--work-dir", str(work)]
         if reference:
             verify += ["--reference", str(reference)]
         steps.run(f"{name}: verify", command, *verify)
         if workload is not None:
-            steps.run(f"{name}: load", command, *benchmark_args(cfg, work, name, workload))
+            steps.run(
+                f"{name}: load", command, *benchmark_args(cfg, work, name, workload)
+            )
         failed = False
     finally:
         if (work / "run.json").exists():
             try:
                 steps.run(
                     f"{name}: stop",
-                    command, "-m", "llmd", "stop", "--work-dir", str(work),
+                    command,
+                    "-m",
+                    "llmd",
+                    "stop",
+                    "--work-dir",
+                    str(work),
                 )
             except StepError:
                 if not failed:
@@ -203,9 +234,7 @@ def profile(work: Path) -> dict:
     if len(rows) != workload["requests"]:
         raise RuntimeError(f"{work.name}: missing profiling requests")
     measured = analysis.client_metrics(rows)
-    (folder / "client_metrics.json").write_text(
-        json.dumps(measured, indent=2) + "\n"
-    )
+    (folder / "client_metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
     result = measured["summary"]
     if result["success_count"]["value"] != workload["requests"]:
         raise RuntimeError(f"{work.name}: profiling requests failed")
@@ -228,12 +257,17 @@ def report(
         raise RuntimeError("candidate output did not match GPU answer reference")
     baseline = profile(root / "performance-baseline") if has_comparison else None
     if baseline:
-        same = ("model", "tokenizer", "input_tokens", "output_tokens", "requests", "seed")
-        if (
-            any(baseline["workload"][key] != candidate["workload"][key] for key in same)
-            or len(baseline["workload"]["slots"])
-            != len(candidate["workload"]["slots"])
-        ):
+        same = (
+            "model",
+            "tokenizer",
+            "input_tokens",
+            "output_tokens",
+            "requests",
+            "seed",
+        )
+        if any(
+            baseline["workload"][key] != candidate["workload"][key] for key in same
+        ) or len(baseline["workload"]["slots"]) != len(candidate["workload"]["slots"]):
             raise RuntimeError("performance baseline and candidate workloads differ")
     comparison = []
     for key, label, unit in METRICS:
@@ -327,7 +361,9 @@ def profile_lines(root: Path, name: str, title: str) -> list[str]:
     )
 
 
-def configuration_lines(experiment: Path, cfg: dict, workload: dict | None) -> list[str]:
+def configuration_lines(
+    experiment: Path, cfg: dict, workload: dict | None
+) -> list[str]:
     def shown(path) -> str:
         path = Path(path)
         return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
@@ -431,7 +467,12 @@ def main() -> None:
             )
         run_service(experiment, root, "candidate", answers, steps, workload)
         result = steps.run(
-            "compare results", report, root, experiment, reference_source, has_comparison
+            "compare results",
+            report,
+            root,
+            experiment,
+            reference_source,
+            has_comparison,
         )
     except BaseException as exc:
         error = exc
