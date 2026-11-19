@@ -95,7 +95,7 @@ def fit(measured, output):
 
 
 def write_profiles(source, templates, output):
-    measured_path = source / "medians.json"
+    measured_path = source / "matching-medians.json"
     spec = config.read_yaml(source / "settings.yaml")
     measured = json.loads(measured_path.read_text())
     changes, link, residuals = fit(measured, spec["output_tokens"])

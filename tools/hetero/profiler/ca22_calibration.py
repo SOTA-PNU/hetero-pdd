@@ -242,6 +242,12 @@ def run(path, mode, folder):
     finally:
         if (resident / "run.json").exists():
             llmd("stop")
+    finish(folder)
+
+
+def finish(folder):
+    samples = json.loads((folder / "samples.json").read_text())
+    spec = config.read_yaml(folder / "settings.yaml")
     # Calibration arms use the same resident model and the same deterministic
     # request index, length and seed on all three native profiles.
     gold = {
@@ -265,24 +271,54 @@ def run(path, mode, folder):
                     request_id=row["request_id"],
                     gpu_request_id=ref["request_id"],
                     first_difference=first,
+                    first_gpu_token=x[first]
+                    if first is not None and first < len(x)
+                    else None,
+                    first_observed_token=y[first]
+                    if first is not None and first < len(y)
+                    else None,
+                    request_index=row["request_index"],
+                    length=row["actual_input_tokens"],
+                    correct=first is None,
                 )
             )
     (folder / "reference.json").write_text(json.dumps(comparisons, indent=2) + "\n")
-    cells: dict[str, dict[int, dict[str, float]]] = {}
-    for route in sources:
-        for length in spec["lengths"]:
-            rows = [
-                r
-                for r in samples
-                if r["route"] == route and r["length"] == length and r["repeat"] >= 0
-            ]
-            metrics = ["prefill_ms", "ttft_ms", "tpot_ms"]
-            if route == "pdd":
-                metrics += ["receive_ms", "import_ms", "blocks", "copy_calls"]
-            cells.setdefault(route, {})[length] = {
-                k: statistics.median(r[k] for r in rows) for k in metrics
-            }
-    (folder / "medians.json").write_text(json.dumps(cells, indent=2) + "\n")
+    failed = {r["request_id"] for r in comparisons if not r["correct"]}
+    status = {
+        r: all(j["correct"] for j in comparisons if j["route"] == r)
+        for r in ("rbln", "pdd")
+    }
+    (folder / "reference-summary.json").write_text(
+        json.dumps(
+            dict(
+                route_correct=status,
+                mismatches=[r for r in comparisons if not r["correct"]],
+            ),
+            indent=2,
+        )
+        + "\n"
+    )
+    for name, eligible in (
+        ("medians", samples),
+        ("matching-medians", [r for r in samples if r["request_id"] not in failed]),
+    ):
+        cells: dict[str, dict[int, dict[str, float]]] = {}
+        for route in spec["profiles"]:
+            for length in spec["lengths"]:
+                rows = [
+                    r
+                    for r in eligible
+                    if r["route"] == route
+                    and r["length"] == length
+                    and r["repeat"] >= 0
+                ]
+                metrics = ["prefill_ms", "ttft_ms", "tpot_ms"]
+                if route == "pdd":
+                    metrics += ["receive_ms", "import_ms", "blocks", "copy_calls"]
+                cells.setdefault(route, {})[length] = {
+                    k: statistics.median(r[k] for r in rows) for k in metrics
+                } | {"count": len(rows)}
+        (folder / f"{name}.json").write_text(json.dumps(cells, indent=2) + "\n")
 
 
 if __name__ == "__main__":
