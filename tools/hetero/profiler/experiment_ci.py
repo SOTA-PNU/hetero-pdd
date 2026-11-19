@@ -381,6 +381,7 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
                 break
     same_input = None
     for run in runs:
+        errors_before = len(errors)
         name = run["arm"]
         label = f"repeat {run['repeat']} / {name}"
         data = run.get("profile")
@@ -439,8 +440,12 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
                 errors.append(
                     f"{label}: output ID mismatch on {len(mismatches)} requests"
                 )
-        if run["timing_valid"]:
-            groups.setdefault(name, []).append(data["metrics"])
+        # Preserve timings from every burst in runs, but require both matching
+        # output and valid measurement evidence before comparing an arm.
+        run["comparison_valid"] = run["timing_valid"] and len(errors) == errors_before
+        arm = groups.setdefault(name, [])
+        if run["comparison_valid"]:
+            arm.append(data["metrics"])
     aggregates = {}
     for name, measurements in groups.items():
         arm = aggregates[name] = {}

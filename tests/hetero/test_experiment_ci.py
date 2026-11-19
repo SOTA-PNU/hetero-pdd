@@ -203,6 +203,7 @@ class ExperimentTests(unittest.TestCase):
                 ("candidate", [0, 1], "pdd"),
                 ("gpu", [0, 2], "gpu_full"),
                 ("candidate", [0, 2], "pdd"),
+                ("candidate", [0, 2], "pdd"),
             ]
         ):
             directory = work / str(i)
@@ -217,7 +218,7 @@ class ExperimentTests(unittest.TestCase):
             runs.append(
                 dict(
                     arm=arm,
-                    repeat=1 if i < 2 else 2,
+                    repeat=max(1, i),
                     work=str(directory),
                     profile={
                         "workload": config,
@@ -233,20 +234,23 @@ class ExperimentTests(unittest.TestCase):
         )
         self.assertEqual(runs[0]["mismatched_request_indices"], [0])
         self.assertTrue(result["errors"])
+        self.assertTrue(runs[0]["timing_valid"])
+        self.assertFalse(runs[0]["comparison_valid"])
+        self.assertEqual(runs[0]["profile"]["metrics"]["output_tokens_per_second"], 1)
         self.assertEqual(
             result["arms"]["candidate"]["output_tokens_per_second"],
             {
-                "values": [1, 3],
-                "median": 2,
-                "min": 1,
-                "max": 3,
+                "values": [3, 4],
+                "median": 3.5,
+                "min": 3,
+                "max": 4,
             },
         )
         self.assertTrue((self.root / "benchmark-summary.json").is_file())
         runs[2]["profile"]["route_evidence"]["measured_unwarmed_paths"] = ["pdd"]
         retry = ci.summarize_runs(self.root, runs)
         self.assertEqual(
-            retry["arms"]["candidate"]["output_tokens_per_second"]["values"], [1]
+            retry["arms"]["candidate"]["output_tokens_per_second"]["values"], [4]
         )
         self.assertFalse(runs[2]["timing_valid"])
         self.assertTrue(any("cold paths" in err for err in retry["errors"]))
