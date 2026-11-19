@@ -1,0 +1,82 @@
+# Frozen before evaluation, 2026-11-20 on Qwen/Qwen3-0.6B@c1899de2,
+# RTX PRO 6000 Blackwell + CA22, fp16 HND, TP1, block=128, 32 blocks,
+# 1 active sequence, 128-token chunks, vLLM 0.22.0 / RBLN 0.11.1.
+# 128/256/512 x 32, concurrency 1, two warmups then six requests per cell.
+# Engine prefill histogram deltas, client inter-token timing, READ start/done
+# and separate host import envelopes. Fitting details in docs/tiktok-hardware.md.
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: tiktok-fixed-off
+- type: cost-route-handler
+  parameters:
+    ttlMillis: 5000
+    textBytesPerToken: 4
+    outputPriorTokens: 32
+    maxKvUtilization: 1.0
+    preload: false
+    objective: workConserving
+    costs:
+      cuda:
+        prefillFixedMs: 6.002
+        prefillMsPerToken: 0.06839
+        fullFixedMs: 7.154
+        decodeMsPerToken: 1.494
+        remainingDecodeTokens: 32
+        kvBytesPerToken: 114688
+      rbln:
+        prefillFixedMs: 2.002
+        prefillMsPerToken: 0.08664
+        fullFixedMs: 7.076
+        decodeMsPerToken: 8.925
+        decodeMsPerContextToken: 0.004299
+        remainingDecodeTokens: 32
+        kvBytesPerToken: 114688
+    links:
+      gpu0:
+        npu0:
+          dispatchFixedMs: 16.303
+          transferFixedMs: 0.630
+          transferMsPerBlock: 27.547
+          importFixedMs: 1.783
+          importMsPerBlock: 20.542
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: label-selector-filter
+  name: prefill-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/producer: 'true'
+- type: label-selector-filter
+  name: decode-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/consumer: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 100ms
+    path: /metrics
+- type: core-metrics-extractor
+- type: live-state-extractor
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-capability
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor
+    - pluginRef: live-state-extractor

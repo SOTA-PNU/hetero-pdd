@@ -6,4 +6,14 @@ endpoints:
   - {id: npu0, backend: rbln, roles: [decode, full], devices: [0], port: 18002, kv_port: 18102, sidecar_port: 18202, sidecar_metrics_port: 18302, engine: {lookahead: {active_decode_limit: 1, lookahead_depth: 1, prefetch_byte_budget: 134217728}}}
 instrumentation: {rbln_events: true}
 verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
-#
+benchmark:
+  input_tokens: 128
+  output_tokens: 32
+  concurrency: 1
+  requests: 32
+  seed: 20260924
+  warmup: 2
+  repeats: 1
+  ci: true
+  comparisons:
+    baseline-hetero: ../llmd/epp/profiles/baseline.yaml
