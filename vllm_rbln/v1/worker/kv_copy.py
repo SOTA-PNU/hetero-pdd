@@ -15,6 +15,7 @@
 """Copies of explicitly allocated blocks between the host buffer and RBLN KV."""
 
 import time
+from collections.abc import Sequence
 from typing import Literal
 
 import torch
@@ -24,7 +25,7 @@ from vllm_rbln.v1.worker import metrics_v2
 
 def block_runs(ids: list[int]) -> list[int | slice]:
     """Preserve wire order, duplicates and singleton indexing at run boundaries."""
-    result = []
+    result: list[int | slice] = []
     i = 0
     while i < len(ids):
         j = i + 1
@@ -64,7 +65,7 @@ def copy_kv_blocks(
             assert src_cache.shape[0] == dst_cache.shape[0] == 2
         for kv in range(dst_cache.shape[0]):
             src, dst = src_cache[kv], dst_cache[kv]
-            indices = src_block_ids
+            indices: Sequence[int | slice] = src_block_ids
             # A strided device slice can trigger an expensive fallback. Group
             # only directly DMA-able views; ordinary integer indexing preserves
             # errors for out-of-range block IDs (a slice would silently clamp).
