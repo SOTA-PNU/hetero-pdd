@@ -161,9 +161,10 @@ def _copy_kv_blocks(
     if canonical:
         from vllm_rbln.v1.worker import kv_canonical
     accepted = accepted_bytes = rejected = scratch_capacity = canonical_ns = prep_ns = 0
-    copy_ns = reorder_ns = calls = 0
+    copy_ns = reorder_ns = calls = native_copy_ns = 0
     for name, dst_cache in dst_kv_caches.items():
         src_cache = src_kv_caches[name]
+        layer = kv_canonical.CanonicalLayer(dst_cache) if canonical else None
         if reorder:
             assert src_cache.shape[0] == dst_cache.shape[0] == 2
         for kv in range(dst_cache.shape[0]):
@@ -207,7 +208,9 @@ def _copy_kv_blocks(
                 if canonical:
                     candidate_start = time.monotonic_ns() if profile else 0
                     size, scratch, candidate_calls, prepared_ns = (
-                        kv_canonical.copy_if_supported(source, target, profile=profile)
+                        kv_canonical.copy_if_supported(
+                            source, target, profile=profile, layer=layer
+                        )
                     )
                     if profile:
                         prep_ns += prepared_ns
@@ -218,12 +221,19 @@ def _copy_kv_blocks(
                         accepted_bytes += size
                     else:
                         rejected += 1
+                        assert layer is not None
+                        if candidate_calls:
+                            layer.rejected = True
+                        else:
+                            layer.verified = False
                         calls += candidate_calls
                         target.copy_(source)
                 else:
                     target.copy_(source)
                 if profile:
                     copy_ns += time.monotonic_ns() - started
+        if profile and layer is not None:
+            native_copy_ns += layer.copy_ns
     if profile:
         # Report the host-call envelope without introducing a device barrier.
         try:
@@ -236,6 +246,7 @@ def _copy_kv_blocks(
                     scratch_capacity,
                     canonical_ns,
                     prep_ns,
+                    native_copy_ns,
                 )
         except Exception as exc:
             metrics_v2.disable_events(exc)

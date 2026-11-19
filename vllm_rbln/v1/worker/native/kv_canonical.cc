@@ -114,8 +114,16 @@ extern "C" const char *ca22_canonical_v1_describe(uint64_t addr) {
   }
 }
 
-extern "C" void ca22_canonical_v1_prepare(const uint16_t *input,
-                                          uint16_t *output, size_t n) {
+// The compiler inlines the identical integer loop into each supported ISA
+// specialization. Use runtime CPU/OS feature checks so a shared cache remains
+// usable on other x86 hosts.
+#ifdef __GNUC__
+#define CA22_INLINE inline __attribute__((always_inline))
+#else
+#define CA22_INLINE inline
+#endif
+namespace {
+CA22_INLINE void prepare(const uint16_t *input, uint16_t *output, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     const uint16_t x = input[i];
     const uint16_t exponent = x & 0x7c00;
@@ -125,6 +133,38 @@ extern "C" void ca22_canonical_v1_prepare(const uint16_t *input,
         exponent != 0 && exponent != 0x7c00 && (x & 0x7fff) != 0x7bff;
     output[i] = x + static_cast<uint16_t>(normal && (x & 1));
   }
+}
+
+using Prepare = void (*)(const uint16_t *, uint16_t *, size_t);
+#if defined(__x86_64__) && defined(__GNUC__)
+__attribute__((target("avx2"))) void prepare_avx2(const uint16_t *src,
+                                                  uint16_t *dst, size_t n) {
+  prepare(src, dst, n);
+}
+__attribute__((target("avx512f,avx512bw,avx512vl,avx2"))) void
+prepare_avx512(const uint16_t *src, uint16_t *dst, size_t n) {
+  prepare(src, dst, n);
+}
+#endif
+
+Prepare select_prepare() {
+#if defined(__x86_64__) && defined(__GNUC__)
+  if (__builtin_cpu_supports("avx2")) {
+    if (__builtin_cpu_supports("avx512f") &&
+        __builtin_cpu_supports("avx512bw") &&
+        __builtin_cpu_supports("avx512vl"))
+      return prepare_avx512;
+    return prepare_avx2;
+  }
+#endif
+  return prepare;
+}
+} // namespace
+
+extern "C" void ca22_canonical_v1_prepare(const uint16_t *src, uint16_t *dst,
+                                          size_t n) {
+  static const Prepare implementation = select_prepare();
+  implementation(src, dst, n);
 }
 
 extern "C" void ca22_canonical_v1_pushes(uint64_t *count, uint64_t *bytes) {

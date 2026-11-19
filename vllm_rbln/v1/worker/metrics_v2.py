@@ -132,7 +132,13 @@ def record_copy_threads(
 
 
 def record_canonical_copy(
-    accepted: int, size: int, rejected: int, scratch: int, elapsed_ns: int, prep_ns: int
+    accepted: int,
+    size: int,
+    rejected: int,
+    scratch: int,
+    elapsed_ns: int,
+    prep_ns: int,
+    native_copy_ns: int,
 ) -> None:
     fields = getattr(_copy_stats, "canonical", {})
     _copy_stats.canonical = dict(
@@ -141,6 +147,8 @@ def record_canonical_copy(
         canonical_bytes=fields.get("canonical_bytes", 0) + size,
         canonical_fallback_calls=fields.get("canonical_fallback_calls", 0) + rejected,
         canonical_scratch_bytes=max(scratch, fields.get("canonical_scratch_bytes", 0)),
+        canonical_native_copy_ns=fields.get("canonical_native_copy_ns", 0)
+        + native_copy_ns,
         canonical_prep_ns=fields.get("canonical_prep_ns", 0) + prep_ns,
         canonical_envelope_ns=fields.get("canonical_envelope_ns", 0) + elapsed_ns,
     )

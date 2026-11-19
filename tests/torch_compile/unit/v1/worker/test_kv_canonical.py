@@ -67,7 +67,7 @@ def test_original_replayed_and_counted_on_rejection(monkeypatch, candidate_calls
     dst = torch.full_like(src, -1)
     attempted = []
 
-    def rejected(s, d, *, profile):
+    def rejected(s, d, *, profile, layer):
         assert profile
         attempted.append(s.nbytes)
         if candidate_calls:
@@ -137,3 +137,55 @@ def test_source_sample_emits_bounded_counts_once(monkeypatch):
             },
         )
     ]
+
+
+def test_geometry_reused_only_in_the_same_verified_live_layer(monkeypatch):
+    src = torch.zeros(8, dtype=torch.float16)
+    region = kv_canonical.CanonicalLayer(src)
+    counts = dict(metadata=0, residency=0, host_checks=0, pushes=0)
+    target = SimpleNamespace(
+        device=SimpleNamespace(type="rbln", index=0),
+        shape=src.shape,
+        dtype=src.dtype,
+        requires_grad=False,
+        nbytes=src.nbytes,
+        data_ptr=src.data_ptr,
+        is_contiguous=lambda: True,
+        copy_=lambda _: counts.update(pushes=counts["pushes"] + 1),
+    )
+
+    def counted(key):
+        def check(*_):
+            counts[key] += 1
+            return True
+
+        return check
+
+    lib = SimpleNamespace(
+        ca22_canonical_v1_target=counted("metadata"),
+        ca22_canonical_v1_prepare=lambda *_: None,
+    )
+    monkeypatch.setattr(kv_canonical, "_library", lambda: lib)
+    monkeypatch.setattr(kv_canonical, "_one_ca22", lambda: True)
+    monkeypatch.setattr(kv_canonical, "_resident", counted("residency"))
+    monkeypatch.setattr(kv_canonical, "_no_single_host_view", counted("host_checks"))
+    monkeypatch.setattr(
+        kv_canonical,
+        "_pushes",
+        lambda _: (counts["pushes"], counts["pushes"] * src.nbytes),
+    )
+    monkeypatch.setattr(kv_canonical._scratch, "buffer", src.clone(), raising=False)
+    for _ in range(3):
+        assert (
+            kv_canonical.copy_if_supported(src, target, layer=region)[0] == src.nbytes
+        )
+    assert counts == dict(metadata=1, residency=1, host_checks=3, pushes=3)
+    # A new layer/callback must query the actual SDK metadata again, even
+    # when the virtual pointer is numerically identical.
+    new = kv_canonical.CanonicalLayer(src)
+    assert kv_canonical.copy_if_supported(src, target, layer=new)[0] == src.nbytes
+    assert counts["metadata"] == counts["residency"] == 2
+    assert counts["host_checks"] == counts["pushes"] == 4
+    new.rejected = True
+    assert kv_canonical.copy_if_supported(src, target, layer=new) == (0, 0, 0, 0)
+    assert counts["host_checks"] == counts["pushes"] == 4

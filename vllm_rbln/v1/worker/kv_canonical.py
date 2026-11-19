@@ -115,6 +115,21 @@ def _resident(vmem, base: int, allocation: int) -> bool:
         return False
 
 
+class CanonicalLayer:
+    """Evidence for a single, live layer in one synchronous group copy."""
+
+    def __init__(self, tensor: torch.Tensor) -> None:
+        self.storage = tensor.untyped_storage()
+        self.base = self.storage.data_ptr()
+        self.allocation = self.storage.nbytes()
+        self.verified = False
+        self.rejected = False
+        self.copy_ns = 0
+
+    def contains(self, address: int, size: int) -> bool:
+        return self.base <= address and address + size <= self.base + self.allocation
+
+
 def _pushes(lib) -> tuple[int, int]:
     count, size = ctypes.c_uint64(), ctypes.c_uint64()
     lib.ca22_canonical_v1_pushes(ctypes.byref(count), ctypes.byref(size))
@@ -141,12 +156,18 @@ def _sample_once(source: torch.Tensor, prepared: torch.Tensor) -> None:
 
 
 def copy_if_supported(
-    source: torch.Tensor, target: torch.Tensor, *, profile: bool = False
+    source: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    profile: bool = False,
+    layer: CanonicalLayer | None = None,
 ) -> tuple[int, int, int, int]:
     """Return accepted bytes, scratch capacity, copy calls, and preparation time.
 
     The caller replays the untouched original for every rejected candidate.
     """
+    if layer is not None and layer.rejected:
+        return 0, 0, 0, 0
     if (
         source.device.type != "cpu"
         or target.device.type != "rbln"
@@ -171,19 +192,28 @@ def copy_if_supported(
         if not _one_ca22() or target.device.index != 0:
             _rejection("requires exactly one visible CA22", source, target)
             return 0, 0, 0, 0
-        storage = target.untyped_storage()
-        base, allocation = storage.data_ptr(), storage.nbytes()
-        if not lib.ca22_canonical_v1_target(
-            target.data_ptr(), base, target.nbytes, allocation, target.device.index
-        ):
-            _rejection("unsupported SDK metadata or extent", source, target, lib)
+        region = layer if layer is not None else CanonicalLayer(target)
+        addr, size = target.data_ptr(), target.nbytes
+        if not region.contains(addr, size):
+            _rejection("view outside validated layer", source, target, lib)
             return 0, 0, 0, 0
-        if not _resident(vmem, base, allocation):
-            _rejection("nonresident, host-backed or sharded", source, target, lib)
-            return 0, 0, 0, 0
+        if not region.verified:
+            if not lib.ca22_canonical_v1_target(
+                addr, region.base, size, region.allocation, target.device.index
+            ):
+                _rejection("unsupported SDK metadata or extent", source, target, lib)
+                return 0, 0, 0, 0
+            if not _resident(vmem, region.base, region.allocation):
+                _rejection("nonresident, host-backed or sharded", source, target, lib)
+                return 0, 0, 0, 0
         scratch = getattr(_scratch, "buffer", None)
         if scratch is None:
-            scratch = torch.empty(_LIMIT // 2, dtype=torch.float16, device="cpu")
+            from rebel.kv_cache import aligned_tensor
+
+            scratch = aligned_tensor(_LIMIT // 2)
+            if scratch.data_ptr() % 4096:
+                _rejection("unaligned SDK scratch", source, target)
+                return 0, 0, 0, 0
             _scratch.buffer = scratch
     except (ImportError, AttributeError, RuntimeError, MemoryError) as exc:
         _rejection(f"SDK or scratch unavailable ({type(exc).__name__})", source, target)
@@ -196,17 +226,24 @@ def copy_if_supported(
     prep_ns = time.monotonic_ns() - started if profile else 0
     before_count, before_bytes = _pushes(lib)
     # Retain native tensor-copy dispatch and synchronous buffer lifetime.
+    copy_started = time.monotonic_ns() if profile else 0
     target.copy_(prepared)
+    if profile:
+        region.copy_ns += time.monotonic_ns() - copy_started
     count, size = _pushes(lib)
     if (
         count - before_count != 1
         or size - before_bytes != source.nbytes
-        or not _no_single_host_view(vmem, base)
+        or not _no_single_host_view(vmem, region.base)
     ):
         _rejection(
             "destination or push evidence changed; replay original", source, target, lib
         )
         return 0, scratch.nbytes, 1, prep_ns
+    # This very check is the precondition of the next adjacent synchronous
+    # copy into the same live storage. Any rejection invalidates the layer
+    # in the caller before an ordinary copy/replay can change its state.
+    region.verified = True
     if profile and metrics_v2.EVENTS_ENABLED:
         _sample_once(source, prepared)
     return source.nbytes, scratch.nbytes, 1, prep_ns
