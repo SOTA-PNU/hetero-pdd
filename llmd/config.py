@@ -181,6 +181,7 @@ def load(path):
             "engine",
             "endpoints",
             "verify",
+            "benchmark",
             "instrumentation",
             "cache_root",
             "hub_cache",
@@ -193,11 +194,6 @@ def load(path):
     model = cfg["model"] = model_definition(cfg["model"], path.parent)
     cfg["profile"] = str((path.parent / cfg["profile"]).resolve())
     native = read_yaml(cfg["profile"])
-    if (
-        native.get("apiVersion") != "llm-d.ai/v1"
-        or native.get("kind") != "EndpointPickerConfig"
-    ):
-        raise ValueError("profile requires a native llm-d.ai/v1 EndpointPickerConfig")
     cfg["native"] = native
     cfg.setdefault("host", "127.0.0.1")
     cfg["host"] = str(ipaddress.IPv4Address(cfg["host"]))
@@ -235,6 +231,43 @@ def load(path):
         raise ValueError("verify.paths requires full and/or pdd")
     if verify["concurrency"] > verify["requests"]:
         raise ValueError("verify.concurrency exceeds requests")
+    if "benchmark" in cfg:
+        bench = cfg["benchmark"]
+        fields(
+            bench,
+            keys | {"seed", "warmup", "repeats", "comparisons", "ci"},
+            keys,
+            "benchmark",
+        )
+        for key in keys:
+            integer(bench[key], f"benchmark.{key}")
+        if bench["output_tokens"] < 2 or bench["concurrency"] > bench["requests"]:
+            raise ValueError(
+                "benchmark needs output_tokens >= 2 and requests >= concurrency"
+            )
+        for key, default, low in (
+            ("seed", 20260924, 0),
+            ("warmup", 2, 0),
+            ("repeats", 1, 1),
+        ):
+            integer(bench.setdefault(key, default), f"benchmark.{key}", low=low)
+        if bench["seed"] > 2**63 - 1:
+            raise ValueError("benchmark.seed exceeds the engine's signed 64-bit range")
+        if type(bench.setdefault("ci", True)) is not bool:
+            raise ValueError("benchmark.ci must be a boolean")
+        comparisons = bench.setdefault("comparisons", {})
+        if not isinstance(comparisons, dict):
+            raise ValueError(
+                "benchmark.comparisons requires a label-to-profile mapping"
+            )
+        for label, filename in comparisons.items():
+            if not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", label) or label == "candidate":
+                raise ValueError(
+                    f"invalid or reserved benchmark.comparisons label: {label}"
+                )
+            if not isinstance(filename, str) or not filename:
+                raise ValueError(f"{label}: expected a comparison profile filename")
+            comparisons[label] = str((path.parent / filename).resolve())
     instrumentation = cfg.setdefault("instrumentation", {})
     fields(instrumentation, {"rbln_events", "otlp_endpoint"}, set(), "instrumentation")
     if type(instrumentation.get("rbln_events", False)) is not bool:
@@ -331,6 +364,10 @@ def load(path):
             )
         if verify["input_tokens"] + verify["output_tokens"] > params["max_model_len"]:
             raise ValueError(f"{name}: verification exceeds engine context")
+        if "benchmark" in cfg:
+            bench = cfg["benchmark"]
+            if bench["input_tokens"] + bench["output_tokens"] > params["max_model_len"]:
+                raise ValueError(f"{name}: benchmark exceeds engine context")
         if params["layout"] not in ("HND", "NHD"):
             raise ValueError(f"{name}: vLLM cache layout must be HND or NHD")
         if ep["backend"] == "rbln" and (params["pp"] != 1 or params["dp"] != 1):
@@ -448,6 +485,10 @@ def load(path):
                 }.items()
             }
         )
+        if "lookahead" in params:
+            look = params["lookahead"]
+            labels["pdd.sota.dev/lookahead-depth"] = str(look["lookahead_depth"])
+            labels["pdd.sota.dev/lookahead-bytes"] = str(look["prefetch_byte_budget"])
         ep["tp"] = params["tp"]
     producers = [e for e in endpoints if "prefill" in e["roles"]]
     consumers = [e for e in endpoints if "decode" in e["roles"]]
@@ -467,6 +508,19 @@ def load(path):
             )
     if producers and not consumers:
         raise ValueError("producer pool has no decode candidates")
+    for filename in cfg.get("benchmark", {}).get("comparisons", {}).values():
+        validate_profile(read_yaml(filename), endpoints)
+    validate_profile(native, endpoints)
+    cfg["rejected_pairs"] = rejected
+    return cfg
+
+
+def validate_profile(native, endpoints):
+    if (
+        native.get("apiVersion") != "llm-d.ai/v1"
+        or native.get("kind") != "EndpointPickerConfig"
+    ):
+        raise ValueError("profile requires a native llm-d.ai/v1 EndpointPickerConfig")
     for prof in native.get("schedulingProfiles", []):
         refs = {p["pluginRef"] for p in prof.get("plugins", [])}
         for plugin in native.get("plugins", []):
@@ -480,5 +534,3 @@ def load(path):
                     for e in endpoints
                 ):
                     raise ValueError(f"{prof['name']}: no candidates for {match}")
-    cfg["rejected_pairs"] = rejected
-    return cfg

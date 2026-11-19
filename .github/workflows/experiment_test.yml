@@ -8,6 +8,8 @@ on:
     paths:
       - 'experiments/*.yaml'
       - 'experiments/*.yml'
+      - 'llmd/epp/profiles/*.yaml'
+      - 'llmd/epp/profiles/*.yml'
   workflow_dispatch:
     inputs:
       experiment:
@@ -32,6 +34,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - run: python3 -m pip install PyYAML==6.0.3
+
       - name: Select experiments
         id: changed
         env:
@@ -40,37 +48,21 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            if [[ ! "$MANUAL_EXPERIMENT" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*\.ya?ml$ ]]; then
-              echo "Enter a YAML filename from experiments/" >&2
-              exit 1
-            fi
-            experiment="experiments/$MANUAL_EXPERIMENT"
-            if [[ ! -f "$experiment" ]]; then
-              echo "$experiment does not exist" >&2
-              exit 1
-            fi
-            files=$(jq -cn --arg file "$experiment" '[$file]')
+            files=$(python3 -m tools.hetero.profiler.select_experiments --manual "$MANUAL_EXPERIMENT")
           else
             base="$BEFORE"
             if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
               base=$(git hash-object -t tree --stdin </dev/null)
             fi
-            files=$(git diff --name-only --diff-filter=ACMR -z "$base" "$GITHUB_SHA" -- \
-              ':(glob)experiments/*.yaml' ':(glob)experiments/*.yml' |
-              jq -Rsc 'split("\u0000") | map(select(length > 0))')
+            files=$(python3 -m tools.hetero.profiler.select_experiments --base "$base" --head "$GITHUB_SHA")
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "Selected experiments: $files"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
 
       - name: Validate selected experiments
         env:
           FILES: ${{ steps.changed.outputs.files }}
         run: |
-          python3 -m pip install PyYAML==6.0.3
           jq -r '.[]' <<< "$FILES" | while IFS= read -r experiment; do
             echo "Validating $experiment"
             python3 -m llmd validate "$experiment" > /dev/null
@@ -134,6 +126,7 @@ jobs:
       - name: Test experiment
         run: |
           docker exec \
+            -e GITHUB_SHA \
             -e EXPERIMENT="$EXPERIMENT" \
             "$EXPERIMENT_CONTAINER" bash -lc \
             '"$CUDA_PY" -m tools.hetero.profiler.experiment_ci "$EXPERIMENT" --result-dir /tmp/pdd-home/results'

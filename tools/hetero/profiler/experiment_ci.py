@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import statistics
 import subprocess
 import sys
 import time
@@ -17,6 +19,7 @@ from llmd import config, engines
 from tools.hetero.profiler import analysis
 from tools.hetero.profiler.common import live_rows
 from tools.hetero.profiler.pdd_summary import folded, key_results, metric_table, table
+from tools.hetero.profiler.route_evidence import analyze_routes
 
 ROOT = Path(__file__).resolve().parents[3]
 REFERENCES = (
@@ -44,8 +47,21 @@ def reference_yaml(cfg: dict, destination: Path) -> Path | None:
     if source is None:
         return None
     raw = config.read_yaml(source)
-    raw["model"] = str((source.parent / raw["model"]).resolve())
+    raw["model"] = cfg["model"]
     raw["profile"] = str((source.parent / raw["profile"]).resolve())
+    if "benchmark" in cfg:
+        gpu = next((e for e in cfg["endpoints"] if e["backend"] == "cuda"), None)
+        if gpu is not None:
+            raw["endpoints"] = [
+                {
+                    k: gpu[k]
+                    for k in ("id", "backend", "engine", "devices", "host", "port")
+                }
+                | {"roles": ["full"]}
+            ]
+        for key in ("hub_cache", "cache_root", "ports", "host"):
+            if key in cfg:
+                raw[key] = cfg[key]
     raw["verify"] = {**raw["verify"], **cfg["verify"], "paths": ["full"]}
     destination.write_text(yaml.safe_dump(raw, sort_keys=False))
     config.load(destination)
@@ -130,6 +146,10 @@ def command(*args: str) -> None:
 
 
 def workload_config(cfg: dict) -> dict:
+    if "benchmark" in cfg:
+        return {
+            k: v for k, v in cfg["benchmark"].items() if k not in {"comparisons", "ci"}
+        }
     verify = cfg["verify"]
     max_len = min(ep["engine"]["max_model_len"] for ep in cfg["endpoints"])
     output_tokens = min(
@@ -167,12 +187,12 @@ def benchmark_args(cfg: dict, work: Path, name: str, workload: dict) -> list[str
         str(workload["output_tokens"]),
         "--requests",
         str(workload["requests"]),
-        "--warmup-per-endpoint",
-        "2",
+        "--warmup-waves" if "warmup" in workload else "--warmup-per-endpoint",
+        str(workload.get("warmup", 2)),
         "--seed",
-        str(SEED),
+        str(workload.get("seed", SEED)),
         "--workload",
-        "experiment-comparison",
+        "experiment-" + hashlib.sha256(str(work.resolve()).encode()).hexdigest()[:16],
         "--run-dir",
         str(work / "profile"),
     ]
@@ -231,20 +251,237 @@ def profile(work: Path) -> dict:
     folder = work / "profile"
     rows = list(live_rows(folder / "requests.jsonl"))
     workload = json.loads((folder / "config.json").read_text())
-    if len(rows) != workload["requests"]:
-        raise RuntimeError(f"{work.name}: missing profiling requests")
-    measured = analysis.client_metrics(rows)
+    state = json.loads((work / "run.json").read_text())
+    devices = sum(len(e["devices"]) for e in state["endpoints"])
+    measured = analysis.client_metrics(rows, device_count=devices)
     (folder / "client_metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
     result = measured["summary"]
-    if result["success_count"]["value"] != workload["requests"]:
-        raise RuntimeError(f"{work.name}: profiling requests failed")
+    counts = {
+        "completed": result["success_count"]["value"],
+        "failed": result["failure_count"]["value"],
+        "incomplete": workload["requests"] - result["success_count"]["value"],
+    }
     metrics = {}
     for key, _, _ in METRICS:
-        value = result[key]["value"]
-        if value is None or value <= 0:
-            raise RuntimeError(f"{work.name}: missing profiling metric {key}")
-        metrics[key] = value
-    return {"workload": workload, "metrics": metrics}
+        metrics[key] = result.get(key, {}).get("value")
+    return {
+        "workload": workload,
+        "metrics": metrics,
+        "counts": counts,
+        "route_evidence": analyze_routes(work),
+    }
+
+
+def comparison_yamls(experiment: Path, cfg: dict, root: Path) -> dict:
+    """Change only the EPP profile. All arms keep the candidate's engines."""
+    raw = config.read_yaml(experiment)
+    raw["model"] = cfg["model"]
+    raw.pop("benchmark")
+    # An explicit path expectation belongs to the candidate profile.
+    raw["verify"].pop("paths", None)
+    arms = {}
+    for name, profile_path in cfg["benchmark"]["comparisons"].items():
+        arm = root / f"comparison-{name}.yaml"
+        raw["profile"] = profile_path
+        arm.write_text(yaml.safe_dump(raw, sort_keys=False))
+        config.load(arm)
+        arms[name] = arm
+    return {**arms, "candidate": experiment}
+
+
+def benchmark_runs(experiment, root, cfg, workload, answers, steps):
+    arms = comparison_yamls(experiment, cfg, root)
+    runs = []
+    names = list(arms)
+    for offset in range(workload["repeats"]):
+        directory = root / f"repeat-{offset + 1:02d}"
+        directory.mkdir()
+        for index in range(len(names)):
+            name = names[(offset + index) % len(names)]
+            work = directory / name
+            run = {"repeat": offset + 1, "arm": name, "work": str(work)}
+            runs.append(run)
+            try:
+                run_service(arms[name], directory, name, answers, steps, workload)
+            except StepError as exc:
+                run["error"] = str(exc)
+            if (work / "profile/config.json").is_file():
+                run["profile"] = profile(work)
+    return runs
+
+
+def summarize_runs(root: Path, runs: list[dict]) -> dict:
+    """Aggregate independent measured bursts; compare token IDs at each input index."""
+    errors = []
+    caveats = []
+    groups = {}
+    reference = None
+    reference_label = None
+    # Prefer a run with a verified GPU full response for every measured request.
+    for run in runs:
+        data = run.get("profile", {})
+        count = data.get("workload", {}).get("requests")
+        actual = data.get("route_evidence", {}).get("executed_paths", {})
+        if count and actual == {"gpu_full": count}:
+            rows = live_rows(Path(run["work"]) / "profile/requests.jsonl")
+            candidate = {r["request_index"]: r["streamed_token_ids"] for r in rows}
+            output_len = data["workload"]["output_tokens"]
+            if set(candidate) == set(range(count)) and all(
+                ids and len(ids) == output_len for ids in candidate.values()
+            ):
+                reference = candidate
+                reference_label = f"repeat {run['repeat']} / {run['arm']} (GPU full)"
+                break
+    same_input = None
+    for run in runs:
+        name = run["arm"]
+        label = f"repeat {run['repeat']} / {name}"
+        data = run.get("profile")
+        if run.get("error") or not data:
+            errors.append(f"{label}: {run.get('error', 'no measured requests')}")
+        if not data:
+            continue
+        work = Path(run["work"])
+        cfg = data["workload"]
+        identity = {
+            k: cfg[k]
+            for k in (
+                "model",
+                "tokenizer",
+                "prompts_sha256",
+                "output_tokens",
+                "requests",
+                "seed",
+                "warmup_waves",
+                "generation",
+            )
+        } | {"concurrency": len(cfg["slots"])}
+        if same_input is None:
+            same_input = identity
+        if same_input != identity:
+            errors.append(f"{label}: benchmark inputs or generation settings differ")
+        if data["counts"]["incomplete"]:
+            errors.append(f"{label}: {data['counts']['incomplete']} incomplete")
+        route = data["route_evidence"]
+        if cold := route.get("measured_unwarmed_paths"):
+            caveats.append(f"{label}: measured routes missing from warmup: {cold}")
+        if unknown := route["executed_paths"].get("unverified"):
+            caveats.append(f"{label}: {unknown} unverified execution paths")
+        rows = list(live_rows(work / "profile/requests.jsonl"))
+        if any(r["actual_input_tokens"] != cfg["input_tokens"] for r in rows):
+            errors.append(f"{label}: engine received an unexpected prompt length")
+        tokens = {r["request_index"]: r["streamed_token_ids"] for r in rows}
+        if set(tokens) != set(range(cfg["requests"])) or any(
+            ids is None or len(ids) != cfg["output_tokens"] for ids in tokens.values()
+        ):
+            errors.append(f"{label}: missing streamed output IDs")
+        elif reference is None:
+            reference, reference_label = tokens, label
+        else:
+            mismatches = [i for i in reference if tokens.get(i) != reference[i]]
+            run["mismatched_request_indices"] = mismatches
+            if mismatches:
+                errors.append(
+                    f"{label}: output ID mismatch on {len(mismatches)} requests"
+                )
+        groups.setdefault(name, []).append(data["metrics"])
+    aggregates = {}
+    for name, measurements in groups.items():
+        arm = aggregates[name] = {}
+        for key, _, _ in METRICS:
+            values = [m[key] for m in measurements if m[key] is not None]
+            if len(values) != len(measurements):
+                errors.append(f"{name}: missing measured {key}")
+            arm[key] = {
+                "values": values,
+                "median": statistics.median(values) if values else None,
+                "min": min(values, default=None),
+                "max": max(values, default=None),
+            }
+    result = {
+        "primary_metric": "output_tokens_per_second",
+        "timing": (
+            "TTFT and E2E start at client send."
+            " Throughput covers the entire measured burst."
+        ),
+        "output_agreement_reference": reference_label,
+        "runs": runs,
+        "arms": aggregates,
+        "errors": errors,
+        "caveats": caveats,
+    }
+    (root / "benchmark-summary.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
+def benchmark_lines(result):
+    rows = []
+    for name, arm in result["arms"].items():
+        for key, label, unit in METRICS:
+            metric = arm[key]
+            if metric["median"] is None:
+                continue
+            factor = 1000 if unit == "ms" else 1
+            rows.append(
+                (
+                    name,
+                    label,
+                    unit,
+                    ", ".join(f"{factor * v:.2f}" for v in metric["values"]),
+                    *(f"{factor * metric[k]:.2f}" for k in ("median", "min", "max")),
+                )
+            )
+    route_rows = []
+    for run in result["runs"]:
+        data = run.get("profile", {})
+        if not data:
+            continue
+        routes = data["route_evidence"]
+        counts = data["counts"]
+        paths = routes["executed_paths"]
+        route_rows.append(
+            (
+                run["repeat"],
+                run["arm"],
+                counts["completed"],
+                counts["failed"],
+                counts["incomplete"],
+                paths.get("gpu_full", 0),
+                paths.get("npu_full", 0),
+                paths.get("pdd", 0),
+                paths.get("unverified", 0),
+                routes["preload_selected"],
+                routes["preload_approved"],
+                routes["actual_overlap"],
+            )
+        )
+    return [
+        "",
+        "## Benchmark",
+        "",
+        "Primary metric: output tokens/s. TTFT and E2E exclude client queue time.",
+        "",
+        *table(("Profile", "Metric", "Unit", "Runs", "Median", "Min", "Max"), rows),
+        "",
+        *table(
+            (
+                "Repeat",
+                "Profile",
+                "Complete",
+                "Failed",
+                "Incomplete",
+                "GPU full",
+                "NPU full",
+                "PDD",
+                "Unverified",
+                "Selected",
+                "Approved",
+                "Overlap",
+            ),
+            route_rows,
+        ),
+        *[f"- {c}" for c in result["caveats"]],
+    ]
 
 
 def report(
@@ -256,6 +493,12 @@ def report(
     if verification["correctness"] != expected:
         raise RuntimeError("candidate output did not match GPU answer reference")
     baseline = profile(root / "performance-baseline") if has_comparison else None
+    for measured in (candidate, baseline):
+        if measured and (
+            measured["counts"]["incomplete"]
+            or any(value is None for value in measured["metrics"].values())
+        ):
+            raise RuntimeError("missing profiling requests or metrics")
     if baseline:
         same = (
             "model",
@@ -382,7 +625,8 @@ def configuration_lines(
     ]
     if workload:
         rows += [(f"Workload {key}", value) for key, value in workload.items()]
-        rows.append(("Workload seed", str(SEED)))
+        if "seed" not in workload:
+            rows.append(("Workload seed", str(SEED)))
     return ["", "## Saved configuration"] + table(("Setting", "Value"), rows)
 
 
@@ -396,7 +640,7 @@ def write_summary(
     workload: dict | None = None,
     error: BaseException | None = None,
 ) -> str:
-    is_reference = experiment in REFERENCES
+    is_reference = experiment in REFERENCES and "benchmark" not in cfg
     if error is not None:
         status = "FAILED"
     elif is_reference:
@@ -417,7 +661,9 @@ def write_summary(
     lines += ["", f"- Answer reference: {answer}"]
     if os.environ.get("GITHUB_SHA"):
         lines.append(f"- Commit: `{os.environ['GITHUB_SHA']}`")
-    if result:
+    if result and "arms" in result:
+        lines += benchmark_lines(result)
+    elif result:
         lines += comparison_lines(result, experiment)
     lines += ["", "## Run steps"] + table(
         ("Step", "Status", "Seconds", "Failure reason"),
@@ -448,7 +694,7 @@ def main() -> None:
         if len({ep["node"] for ep in cfg["endpoints"]}) > 1:
             raise ValueError("multi-node experiment needs Kubernetes profiling")
         steps.run("download model", download_model, cfg)
-        if experiment in REFERENCES:
+        if experiment in REFERENCES and "benchmark" not in cfg:
             run_service(experiment, root, "reference", None, steps)
             return
         reference_source = reference_yaml(cfg, root / "answer-reference.yaml")
@@ -456,6 +702,16 @@ def main() -> None:
         workload = workload_config(cfg)
         if reference_source:
             run_service(root / "answer-reference.yaml", root, "reference", None, steps)
+        if "benchmark" in cfg:
+            runs = benchmark_runs(experiment, root, cfg, workload, answers, steps)
+            result = summarize_runs(root, runs)
+            if result["errors"]:
+                raise StepError("; ".join(result["errors"]))
+            if reference_source is None:
+                raise StepError(
+                    "No matching GPU answer reference; correctness was not evaluated"
+                )
+            return
         performance_file = root / "performance-baseline.yaml"
         has_comparison = (
             experiment != PERFORMANCE_BASELINE
