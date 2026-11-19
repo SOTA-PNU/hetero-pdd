@@ -1,11 +1,11 @@
 apiVersion: hetero-pdd/service-suite-v1
 experiment: ../tiktok-parallel.yaml
 gpu_reference: ../../llmd/epp/profiles/gpu-only.yaml
-engines: {npu0: {coalesce_kv_import: true, kv_import_threads: 12}}
+engines: {npu0: {coalesce_kv_import: true, kv_import_threads: 12, canonicalize_kv_import: true}}
 arms:
   baseline-hetero: {profile: ../../llmd/epp/profiles/baseline.yaml}
   gpu-only: {profile: ../../llmd/epp/profiles/gpu-only.yaml}
-  preload-off: {profile: ../../llmd/epp/profiles/ca22-import-calibrated/tiktok-off.yaml}
-  candidate: {profile: ../../llmd/epp/profiles/ca22-import-calibrated/tiktok.yaml}
+  preload-off: {profile: ../../llmd/epp/profiles/ca22-import-canonical/tiktok-off.yaml}
+  candidate: {profile: ../../llmd/epp/profiles/ca22-import-canonical/tiktok.yaml}
 workloads:
-  automatic: {}
+  automatic: {warmup: 6}

@@ -141,12 +141,12 @@ class ServiceTests(unittest.TestCase):
                 [
                     "ordinary",
                     "coalesced",
-                    "threaded",
-                    "threaded",
+                    "canonical",
+                    "canonical",
                     "ordinary",
                     "coalesced",
                     "coalesced",
-                    "threaded",
+                    "canonical",
                     "ordinary",
                 ],
             )

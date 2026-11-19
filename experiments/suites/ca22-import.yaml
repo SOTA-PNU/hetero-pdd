@@ -5,9 +5,9 @@ arms:
   ordinary:
     engines: {npu0: {coalesce_kv_import: false}}
   coalesced:
-    engines: {npu0: {coalesce_kv_import: true}}
-  threaded:
     engines: {npu0: {coalesce_kv_import: true, kv_import_threads: 12}}
+  canonical:
+    engines: {npu0: {coalesce_kv_import: true, kv_import_threads: 12, canonicalize_kv_import: true}}
 workloads:
   four-block: {input_tokens: 512, expected_paths: [pdd]}
   one-block: {input_tokens: 128, expected_paths: [pdd]}
