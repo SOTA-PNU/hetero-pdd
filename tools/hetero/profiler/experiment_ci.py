@@ -312,12 +312,16 @@ def profile(work: Path) -> dict:
     metrics = {}
     for key, _, _ in METRICS:
         metrics[key] = result.get(key, {}).get("value")
-    return {
+    result = {
         "workload": workload,
         "metrics": metrics,
         "counts": counts,
         "route_evidence": analyze_routes(work),
     }
+    benchmark = state.get("experiment", {}).get("benchmark", {})
+    if "expected_paths" in benchmark:
+        result["expected_paths"] = benchmark["expected_paths"]
+    return result
 
 
 def comparison_yamls(experiment: Path, cfg: dict, root: Path) -> dict:
@@ -414,6 +418,16 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
                 f"{label}: {counts['failed']} failed, {counts['incomplete']} incomplete"
             )
         route = data["route_evidence"]
+        if name == "candidate" and (allowed := data.get("expected_paths")):
+            actual = route["executed_paths"]
+            allowed_count = sum(actual.get(path, 0) for path in allowed)
+            if allowed_count != cfg["requests"] or any(
+                count for path, count in actual.items() if path not in allowed
+            ):
+                errors.append(
+                    f"{label}: expected all {cfg['requests']} requests on {allowed}; "
+                    f"verified {allowed_count}, observed {actual}"
+                )
         cold = route.get("measured_unwarmed_paths")
         unknown = route["executed_paths"].get("unverified")
         if cold:

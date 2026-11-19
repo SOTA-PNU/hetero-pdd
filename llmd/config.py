@@ -280,10 +280,22 @@ def load(path):
         bench = cfg["benchmark"]
         fields(
             bench,
-            keys | {"seed", "warmup", "repeats", "comparisons", "ci"},
+            keys | {"seed", "warmup", "repeats", "comparisons", "ci", "expected_paths"},
             keys,
             "benchmark",
         )
+        if "expected_paths" in bench:
+            expected_paths = bench["expected_paths"]
+            allowed = ("gpu_full", "npu_full", "pdd")
+            if (
+                not isinstance(expected_paths, list)
+                or not expected_paths
+                or any(path not in allowed for path in expected_paths)
+                or len(set(expected_paths)) != len(expected_paths)
+            ):
+                raise ValueError(
+                    "benchmark.expected_paths requires unique gpu_full, npu_full or pdd"
+                )
         for key in keys:
             integer(bench[key], f"benchmark.{key}")
         if bench["output_tokens"] < 2 or bench["concurrency"] > bench["requests"]:

@@ -15,5 +15,6 @@ benchmark:
   warmup: 2
   repeats: 1
   ci: true
+  expected_paths: [gpu_full]
   comparisons:
     baseline-hetero: ../llmd/epp/profiles/baseline.yaml

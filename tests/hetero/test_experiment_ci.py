@@ -51,6 +51,7 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(labels["pdd.sota.dev/lookahead-depth"], "1")
         self.assertEqual(labels["pdd.sota.dev/lookahead-bytes"], "131072")
         good = self.raw["benchmark"]
+        invalid: dict
         for invalid in (
             {"requests": 2},
             {"warmup": -1},
@@ -59,6 +60,11 @@ class ExperimentTests(unittest.TestCase):
             {"output_tokens": 1},
             {"input_tokens": 999},
             {"prefill": 512},
+            {"expected_paths": []},
+            {"expected_paths": "gpu_full"},
+            {"expected_paths": ["full"]},
+            {"expected_paths": ["gpu_full", "gpu_full"]},
+            {"expected_paths": [None]},
             {"comparisons": {"../bad": "missing"}},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
@@ -178,10 +184,18 @@ class ExperimentTests(unittest.TestCase):
             "".join(json.dumps(r) + "\n" for r in rows)
         )
         (profile / "config.json").write_text(json.dumps({"requests": 4}))
-        (work / "run.json").write_text(json.dumps({"endpoints": [{"devices": [0]}]}))
+        (work / "run.json").write_text(
+            json.dumps(
+                {
+                    "endpoints": [{"devices": [0]}],
+                    "experiment": {"benchmark": {"expected_paths": ["gpu_full"]}},
+                }
+            )
+        )
         with patch.object(ci, "analyze_routes", return_value={}):
             data = ci.profile(work)
         self.assertEqual(data["counts"], {"completed": 1, "failed": 1, "incomplete": 2})
+        self.assertEqual(data["expected_paths"], ["gpu_full"])
 
     def test_report_keeps_variation_and_flags_disagreement_against_gpu(self):
         work = self.root / "case"
@@ -254,6 +268,56 @@ class ExperimentTests(unittest.TestCase):
         )
         self.assertFalse(runs[2]["timing_valid"])
         self.assertTrue(any("cold paths" in err for err in retry["errors"]))
+
+    def test_candidate_expected_paths_gate_uses_verified_measurements(self):
+        raw = {
+            "request_index": 0,
+            "actual_input_tokens": 8,
+            "streamed_token_ids": [1, 2],
+        }
+        directory = self.root / "arm"
+        folder = directory / "profile"
+        folder.mkdir(parents=True)
+        (folder / "requests.jsonl").write_text(json.dumps(raw) + "\n")
+        workload = dict(
+            model="m",
+            tokenizer="t",
+            prompts_sha256="p",
+            output_tokens=2,
+            requests=1,
+            seed=42,
+            warmup_waves=1,
+            generation={},
+            slots=[{}],
+            input_tokens=8,
+        )
+
+        def run(name, paths):
+            return dict(
+                arm=name,
+                repeat=1,
+                work=str(directory),
+                profile=dict(
+                    workload=workload,
+                    counts=dict(completed=1, failed=0, incomplete=0),
+                    metrics={k: 1 for k, _, _ in ci.METRICS},
+                    expected_paths=["gpu_full"],
+                    route_evidence=dict(executed_paths=paths),
+                ),
+            )
+
+        for paths, valid in (({"gpu_full": 1}, True), ({"pdd": 1}, False), ({}, False)):
+            with self.subTest(paths=paths):
+                baseline = run("baseline-hetero", {"npu_full": 1})
+                candidate = run("candidate", paths)
+                report = ci.summarize_runs(self.root, [baseline, candidate])
+                self.assertTrue(baseline["comparison_valid"])
+                self.assertEqual(candidate["comparison_valid"], valid)
+                self.assertEqual(bool(report["errors"]), not valid)
+                rates = report["arms"]["candidate"]["output_tokens_per_second"][
+                    "values"
+                ]
+                self.assertEqual(rates, [1] if valid else [])
 
     def test_legacy_workload_defaults(self):
         self.raw.pop("benchmark")
