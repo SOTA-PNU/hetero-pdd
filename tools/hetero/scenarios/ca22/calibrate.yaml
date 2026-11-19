@@ -11,4 +11,4 @@ seed: 93214
 engine_modes:
   original: {coalesce_kv_import: false}
   coalesced: {coalesce_kv_import: true}
-  threaded: {coalesce_kv_import: true, kv_import_threads: 8}
+  threaded: {coalesce_kv_import: true, kv_import_threads: 12}
