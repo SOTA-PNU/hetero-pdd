@@ -195,6 +195,21 @@ def _proof(work, decoder, first, following):
     )
 
 
+def _handoff_timing(proof):
+    # Compare the same local decoder boundary even if anchor generation time
+    # drifts between repetitions. The host import remains on the critical path.
+    terminal = proof["previous_decode_terminal"]["monotonic_ns"]
+    begin = proof["transfer"]["monotonic_ns"]
+    ready = proof["host_ready"]["monotonic_ns"]
+    imported = proof["import_done"]
+    decode = proof["first_next_decode"]["span_start_ns"]
+    return dict(
+        previous_terminal_to_next_decode_ms=(decode - terminal) / 1e6,
+        next_receive_ms=(ready - begin) / 1e6,
+        next_import_ms=(imported["end_ns"] - imported["start_ns"]) / 1e6,
+    )
+
+
 def _cancel_held_request(endpoint, scheduler_path, body):
     """Close a real gateway connection after observing its engine reservation."""
     url = urlsplit(endpoint)
@@ -377,6 +392,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
             result["recovery"] = completion(128, 32, 2)
             events = _rows(sorted(Path(decoder["events_dir"]).glob("events_*.jsonl")))
             sched = _rows([work / f"{decoder['id']}-admission.jsonl"])
+            native = []
             for req in (a, b):
                 ids = [
                     e["req_id"]
@@ -396,6 +412,41 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
                     e["kind"] == "kv_h2d" and e["req_id"] == ids[0] for e in events
                 ):
                     raise ValueError("ordinary control lacks a completed KV import")
+                native.append(ids[0])
+            prior, following = native
+            proof = {
+                "previous_decode_terminal": next(
+                    r
+                    for r in sched
+                    if r["event"] == "REQUEST_TERMINAL" and r["request_id"] == prior
+                ),
+                "first_next_decode": next(
+                    r
+                    for r in events
+                    if r["kind"] == "model_call"
+                    and r["phase"] == "decode"
+                    and following in r["request_ids"]
+                ),
+            }
+            for field, kind in (
+                ("transfer", "kv_xfer_start"),
+                ("host_ready", "kv_xfer_done"),
+                ("import_done", "kv_h2d"),
+            ):
+                proof[field] = next(
+                    r for r in events if r["kind"] == kind and r["req_id"] == following
+                )
+            if not (
+                proof["previous_decode_terminal"]["monotonic_ns"]
+                <= proof["transfer"]["monotonic_ns"]
+                <= proof["host_ready"]["monotonic_ns"]
+                <= proof["import_done"]["start_ns"]
+                <= proof["import_done"]["end_ns"]
+                <= proof["first_next_decode"]["span_start_ns"]
+            ):
+                raise ValueError("ordinary control received/imported KV out of order")
+            result["proof"] = proof
+            result["pair_timing"].update(_handoff_timing(proof))
             result["status"] = "passed"
             return
         # Also verify identical inputs on the ordinary PD route after both
@@ -422,6 +473,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
                 time.sleep(0.2)
         else:
             raise error
+        result["pair_timing"].update(_handoff_timing(result["proof"]))
         result["status"] = "passed"
     except Exception as exc:
         result.update(status="failed", error=str(exc))
