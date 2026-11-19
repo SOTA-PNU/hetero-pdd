@@ -294,9 +294,15 @@ def validate(case, buffers, sync, materialize):
         target = want + 1
         if not torch.equal(result, target):
             first = (result != target).flatten().nonzero()[0].item()
+            # A virtual host mirror and compiled consumer are distinct views of a
+            # failure. Record both, together with the physical transfer counters.
+            direct = npu.cpu().flatten()[first].item()
+            h2d = trace.dump()["runtime_residency"].get("real_host_sync_h2d")
             raise ValueError(
                 f"device consumer/guard mismatch for {case} at element {first}: "
-                f"got {result.flatten()[first]}, expected {target.flatten()[first]}"
+                f"got {result.flatten()[first]}, expected {target.flatten()[first]}, "
+                f"direct readback {direct}, expected {want.flatten()[first]}, "
+                f"real_h2d={h2d}, extra_readiness_h2d={pushed}"
             )
     report = trace.dump()
     report["readiness_extra_h2d"] = pushed
@@ -492,7 +498,7 @@ def run(cfg, out):
             guard_validation_elements=sum(t.numel() for t in buf[1]),
             thread_runtime_trace=validate(case, buf, sync, materialize),
         )
-    save(out / "plans.json", plans)
+        save(out / "plans.json", plans)
     results = {name: [] for name in names}
     blank = []
     with (out / "samples.jsonl").open("x", buffering=1) as stream:
