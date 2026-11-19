@@ -574,7 +574,7 @@ def _gpu_full_route(work, rid, target):
     return dict(epp_request_id=choices[0]["epp_request_id"], gateway=access[0])
 
 
-def compare_gpu(work, gpu_work):
+def compare_gpu(work, gpu_work, *, defer_routes=False):
     staged = json.loads((work / "overlap-verification.json").read_text())
     original = json.loads((work / "run.json").read_text())
     gpu = json.loads((gpu_work / "run.json").read_text())
@@ -632,6 +632,7 @@ def compare_gpu(work, gpu_work):
         if e["kind"] == "gpu" and "full" in e["roles"]
     }
     report = dict(
+        correctness="awaiting_replay",
         reference_pool="shared" if mixed_pool else "dedicated_gpu",
         weights_sha256=next(iter(weights.values())),
         overlap_run=original["run_id"],
@@ -660,22 +661,55 @@ def compare_gpu(work, gpu_work):
             or len(choice["token_ids"]) != req["output_tokens"]
         ):
             raise ValueError("invalid independent GPU reference completion")
-        ids = choice["token_ids"]
-        first_diff = next(
-            (i for i, (x, y) in enumerate(zip(ids, req["token_ids"])) if x != y), None
-        )
-        route = (
-            _gpu_full_route(gpu_work, rid, gpu_targets[headers["x-hetero-target"]])
-            if mixed_pool
-            else None
-        )
         report["result_by_request"][key] = dict(
-            reference_route=route,
             client_request_id=rid,
             target=headers["x-hetero-target"],
-            token_ids=ids,
-            exact=first_diff is None,
-            first_different_token_index=first_diff,
+            token_ids=choice["token_ids"],
+        )
+        # Capture both client replies independently of the gateway log sink's
+        # flush schedule. Partial captures are never marked verified.
+        save(path, report)
+    report["correctness"] = "awaiting_route_evidence"
+    save(path, report)
+    if not defer_routes:
+        audit_gpu(work, gpu_work)
+
+
+def audit_gpu(work, gpu_work):
+    """Complete a saved replay even after the reference service is stopped."""
+    path = work / "overlap-gpu-reference.json"
+    report = json.loads(path.read_text())
+    staged = json.loads((work / "overlap-verification.json").read_text())
+    gpu = json.loads((gpu_work / "run.json").read_text())
+    if (
+        staged.get("status") != "passed"
+        or staged["run_id"] != report["overlap_run"]
+        or gpu["run_id"] != report["reference_run"]
+        or set(report["result_by_request"]) != {"first", "following"}
+    ):
+        raise ValueError("incomplete or mismatched GPU reference capture")
+    targets = {e["id"]: e for e in gpu["endpoints"]}
+    mixed_pool = any(
+        e["kind"] != "gpu" or e["roles"] != ["full"] for e in targets.values()
+    )
+    for key, result in report["result_by_request"].items():
+        target = targets[result["target"]]
+        if (
+            target["kind"] != "gpu"
+            or target["backend"] != "cuda"
+            or "full" not in target["roles"]
+        ):
+            raise ValueError("reference target is not a CUDA full endpoint")
+        if mixed_pool:
+            result["reference_route"] = _gpu_full_route(
+                gpu_work, result["client_request_id"], target
+            )
+        ids = result["token_ids"]
+        expected = staged[key]["token_ids"]
+        result["exact"] = ids == expected
+        result["first_different_token_index"] = next(
+            (idx for idx, (a, b) in enumerate(zip(ids, expected)) if a != b),
+            min(len(ids), len(expected)) if len(ids) != len(expected) else None,
         )
     report["correctness"] = (
         "passed"
@@ -704,8 +738,26 @@ if __name__ == "__main__":
         help="override verify.overlap_probe.arrival_offset_ms",
     )
     mode.add_argument("--gpu-reference-run", type=Path)
+    mode.add_argument(
+        "--collect-gpu-reference-run",
+        type=Path,
+        help="persist GPU token replies for audit after the gateway exits",
+    )
+    mode.add_argument(
+        "--audit-gpu-reference-run",
+        type=Path,
+        help="verify saved GPU token replies against completed route logs",
+    )
     args = parser.parse_args()
-    if args.gpu_reference_run:
+    if args.collect_gpu_reference_run:
+        compare_gpu(
+            args.work_dir.resolve(),
+            args.collect_gpu_reference_run.resolve(),
+            defer_routes=True,
+        )
+    elif args.audit_gpu_reference_run:
+        audit_gpu(args.work_dir.resolve(), args.audit_gpu_reference_run.resolve())
+    elif args.gpu_reference_run:
         compare_gpu(args.work_dir.resolve(), args.gpu_reference_run.resolve())
     else:
         run(

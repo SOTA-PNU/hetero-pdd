@@ -1,3 +1,16 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Linux process ownership and readiness for one persistent experiment."""
 
 from __future__ import annotations
@@ -69,6 +82,10 @@ def check_ports(ports):
 
 def spawn(name, argv, env, work, state):
     with (work / f"{name}.log").open("xb") as log:
+        # Envoy reopens /dev/stdout for access records. A diagnostic on the
+        # original fd must append after those records, even at process exit.
+        flags = fcntl.fcntl(log, fcntl.F_GETFL)
+        fcntl.fcntl(log, fcntl.F_SETFL, flags | os.O_APPEND)
         proc = subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,

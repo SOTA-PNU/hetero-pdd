@@ -1,10 +1,13 @@
 """Regression tests for the measured overlap evidence boundary."""
 
 import json
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
+from llmd import overlap, runtime
 from llmd.overlap import _gpu_full_route
 from tools.hetero.profiler.route_evidence import (
     _overlap,
@@ -144,6 +147,112 @@ class RouteEvidenceTests(TestCase):
         )
         with self.assertRaisesRegex(ValueError, "direct CUDA"):
             _gpu_full_route(self.work, "b", target)
+
+    def test_save_gpu_replies_before_envoy_access_log_flush(self):
+        reference = self.work / "gpu-replay"
+        reference.mkdir()
+        (reference / "weights.safetensors").write_bytes(b"pinned test weights")
+        model = dict(
+            name="qwen",
+            revision="abc",
+            tokenizer="qwen",
+            tokenizer_revision="abc",
+            tokenizer_sha256="h",
+            config_sha256="c",
+            path=str(reference),
+        )
+        engine = dict(
+            dtype="float16", kv_dtype="float16", max_model_len=1024, block_size=128
+        )
+        gpu = dict(
+            self.producer, engine=engine, backend="cuda", url="http://127.0.0.1:18001"
+        )
+        state = dict(
+            endpoint="http://127.0.0.1:18000",
+            model=model,
+            status="ready",
+            endpoints=[gpu, {**self.ep, "engine": engine}],
+        )
+        for root, run in ((reference, "reference"), (self.work, "candidate")):
+            (root / "run.json").write_text(json.dumps(dict(state, run_id=run)))
+        requests = {
+            key: dict(payload={"prompt": [1]}, output_tokens=2, token_ids=[11, 12])
+            for key in ("first", "following")
+        }
+        (self.work / "overlap-verification.json").write_text(
+            json.dumps(dict(status="passed", run_id="candidate", **requests))
+        )
+        ids = []
+
+        def reply(endpoint, *, data, headers, timeout):
+            rid = headers["X-Request-Id"]
+            ids.append(rid)
+            return (
+                json.dumps(
+                    {"choices": [{"finish_reason": "length", "token_ids": [11, 12]}]}
+                ),
+                {
+                    "x-request-id": rid,
+                    "x-hetero-path": "full",
+                    "x-hetero-target": "gpu",
+                },
+            )
+
+        with (
+            patch.object(overlap, "confirm_listeners"),
+            patch.object(overlap, "fetch", reply),
+        ):
+            overlap.compare_gpu(self.work, reference, defer_routes=True)
+        path = self.work / "overlap-gpu-reference.json"
+        capture = json.loads(path.read_text())
+        self.assertEqual(capture["correctness"], "awaiting_route_evidence")
+        self.assertEqual(len(capture["result_by_request"]), 2)
+
+        decisions = [
+            dict(request_id=rid, target="gpu", prefill="", path="full") for rid in ids
+        ]
+        self.save_rows(
+            reference / "epp.log",
+            [
+                dict(d, body="hetero_route", epp_request_id=f"e{i}")
+                for i, d in enumerate(decisions)
+            ],
+        )
+        # Real Envoy logs contain stderr diagnostics on the inherited fd and
+        # JSON access records on a separately opened /dev/stdout. A shutdown
+        # diagnostic formerly overwrote the first access record in the file.
+        records = [
+            dict(
+                d,
+                event="gateway_access",
+                http_status=200,
+                prefill=None,
+                destination="127.0.0.1:18001",
+            )
+            for d in decisions
+        ]
+        script = (
+            "import os,sys; os.write(2,b'startup\\n'); "
+            "f=open('/dev/stdout','a'); f.write(sys.argv[1]); f.close(); "
+            "os.write(2,b'shutdown diagnostic\\n')"
+        )
+        argv = [
+            sys.executable,
+            "-c",
+            script,
+            "".join(json.dumps(r) + "\n" for r in records),
+        ]
+        proc = runtime.spawn(
+            "gateway", argv, {}, reference, dict(run_id="test", processes={})
+        )
+        self.assertEqual(proc.wait(5), 0)
+        overlap.audit_gpu(self.work, reference)
+        verified = json.loads(path.read_text())
+        self.assertEqual(verified["correctness"], "passed")
+        for result in verified["result_by_request"].values():
+            self.assertEqual(
+                result["reference_route"]["gateway"]["destination"], "127.0.0.1:18001"
+            )
 
     def test_selected_route_alone_does_not_confirm_transfer(self):
         self.proof()
