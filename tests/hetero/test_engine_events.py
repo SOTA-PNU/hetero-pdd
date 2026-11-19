@@ -95,11 +95,11 @@ class EngineEventTests(unittest.TestCase):
                 self.assertEqual(logger.warning.call_count, int(enabled))
                 self.assertFalse(list(Path(temp).iterdir()))
             m.reset_copy_stats()
-            m.add_copy_stats(10, 20, 2)
-            m.add_copy_stats(30, 40, 3)
-            self.assertEqual(m.take_copy_stats(), (40, 60, 5))
+            m.add_copy_stats(10, 20, 2, 4)
+            m.add_copy_stats(30, 40, 3, 6)
+            self.assertEqual(m.take_copy_stats(), (40, 60, 5, 10))
             m.reset_copy_stats()
-            self.assertEqual(m.take_copy_stats(), (0, 0, 0))
+            self.assertEqual(m.take_copy_stats(), (0, 0, 0, 0))
 
     @unittest.skipUnless(os.environ.get("RBLN_PY"), "RBLN_PY is not set")
     def test_rbln_imports(self):

@@ -326,7 +326,7 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
             if metrics_v2.EVENTS_ENABLED and start_ns is not None:
                 try:
                     end_ns = time.monotonic_ns()
-                    h2d_ns, reorder_ns, num_blocks = metrics_v2.take_copy_stats()
+                    h2d_ns, reorder_ns, num_blocks, calls = metrics_v2.take_copy_stats()
                     metrics_v2.record_event(
                         "kv_h2d",
                         req_id=req_id,
@@ -335,6 +335,7 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
                         end_ns=end_ns,
                         h2d_ns=h2d_ns,
                         reorder_ns=reorder_ns,
+                        copy_calls=calls,
                         num_blocks=num_blocks,
                         bytes_est=num_blocks * self._metrics_block_bytes,
                     )

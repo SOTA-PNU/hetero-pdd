@@ -116,16 +116,21 @@ def record_event(kind: str, **fields) -> None:
 
 
 def reset_copy_stats() -> None:
-    _copy_stats.totals = (0, 0, 0)
+    _copy_stats.totals = (0, 0, 0, 0)
 
 
-def add_copy_stats(h2d_ns: int, reorder_ns: int, num_blocks: int) -> None:
-    h2d, reorder, blocks = getattr(_copy_stats, "totals", (0, 0, 0))
-    _copy_stats.totals = (h2d + h2d_ns, reorder + reorder_ns, blocks + num_blocks)
+def add_copy_stats(h2d_ns: int, reorder_ns: int, num_blocks: int, calls: int) -> None:
+    h2d, reorder, blocks, copies = getattr(_copy_stats, "totals", (0, 0, 0, 0))
+    _copy_stats.totals = (
+        h2d + h2d_ns,
+        reorder + reorder_ns,
+        blocks + num_blocks,
+        copies + calls,
+    )
 
 
-def take_copy_stats() -> tuple[int, int, int]:
-    totals = getattr(_copy_stats, "totals", (0, 0, 0))
+def take_copy_stats() -> tuple[int, int, int, int]:
+    totals = getattr(_copy_stats, "totals", (0, 0, 0, 0))
     reset_copy_stats()
     return totals
 

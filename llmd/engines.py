@@ -309,7 +309,7 @@ def compilation_cache(root, model, ep, hardware):
     contract = {
         "format": 1,
         "model": model,
-        "engine": ep["engine"],
+        "engine": {k: v for k, v in ep["engine"].items() if k != "coalesce_kv_import"},
         "backend": ep["backend"],
         "node": ep["node"],
         "roles": ep["roles"],
@@ -445,6 +445,7 @@ def engine_spec(model, ep, *, work, engine_id, cache, peer_devices, instrumentat
             VLLM_RBLN_COMPILE_STRICT_MODE="1",
             VLLM_RBLN_SAMPLER="0",
             VLLM_RBLN_PDD_LAYOUT_REORDER="0",
+            VLLM_RBLN_COALESCE_KV_IMPORT="1" if opts.get("coalesce_kv_import") else "0",
             RBLN_USE_CUSTOM_KERNEL="0",
             RBLN_ROOT_IP=ep["host"],
             RBLN_LOCAL_IP=ep["host"],

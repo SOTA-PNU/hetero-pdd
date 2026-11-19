@@ -105,6 +105,7 @@ ENGINE_KEYS = set(DEFAULT_ENGINE) | {
     "lookahead",
     "extra_args",
     "compile_options",
+    "coalesce_kv_import",
 }
 
 
@@ -470,6 +471,14 @@ def load(path):
             params["compile_options"], dict
         ):
             raise ValueError("compile_options requires vLLM compilation-config object")
+        if "coalesce_kv_import" in params and (
+            type(params["coalesce_kv_import"]) is not bool
+            or ep["backend"] != "rbln"
+            or "decode" not in roles
+        ):
+            raise ValueError(
+                "coalesce_kv_import requires a boolean on an RBLN consumer"
+            )
         labels = ep.setdefault("labels", {})
         if not isinstance(labels, dict) or any(
             not isinstance(v, str) or k.startswith("pdd.sota.dev/")

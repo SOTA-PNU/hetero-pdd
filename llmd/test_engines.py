@@ -23,6 +23,8 @@ class EngineTests(unittest.TestCase):
             "os.environ", CUDA_PY="/cuda/bin/python", RBLN_PY="/rbln/bin/python"
         ):
             for ep in self.cfg["endpoints"]:
+                if ep["kind"] == "npu":
+                    ep["engine"]["coalesce_kv_import"] = True
                 spec = engines.engine_spec(
                     self.model,
                     ep,
@@ -37,6 +39,7 @@ class EngineTests(unittest.TestCase):
                 self.assertEqual(transfer["engine_id"], "run-" + ep["id"])
                 self.assertEqual(transfer["kv_load_failure_policy"], "fail")
                 if ep["kind"] == "npu":
+                    self.assertEqual(env["VLLM_RBLN_COALESCE_KV_IMPORT"], "1")
                     self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "1,3")
                     self.assertEqual(transfer["kv_buffer_device"], "cpu")
                 ep["roles"] = ["full"]
@@ -66,7 +69,7 @@ class EngineTests(unittest.TestCase):
             engines._snapshot(self.model)
 
     def test_only_ready_compatible_generation_is_reused(self):
-        ep = self.cfg["endpoints"][0]
+        ep = next(ep for ep in self.cfg["endpoints"] if ep["kind"] == "npu")
 
         def cache():
             return engines.compilation_cache(
@@ -79,6 +82,7 @@ class EngineTests(unittest.TestCase):
         with cache() as (built, meta, publish):
             self.assertFalse(meta["reused"])
             publish()
+        ep["engine"]["coalesce_kv_import"] = True
         with cache() as (again, meta, _):
             self.assertTrue(meta["reused"])
             self.assertEqual(again, built)
