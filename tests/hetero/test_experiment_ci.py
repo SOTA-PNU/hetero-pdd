@@ -148,11 +148,27 @@ class ExperimentTests(unittest.TestCase):
             (directory / "warmup_requests.jsonl").write_text(uid + "-warm\n")
             (directory / "requests.jsonl").write_text(uid + "-live\n")
 
+        # Before Envoy flushes the first burst, its cold path is also invisible.
+        elapsed = 0.0
+
+        def advance(seconds):
+            nonlocal elapsed
+            elapsed += seconds
+
         def evidence(_work):
+            if elapsed < 10:
+                return {
+                    "measured_unwarmed_paths": [],
+                    "executed_paths": {"unverified": 3},
+                }
             cold = ["npu_full"] if len(prefix) == 1 else []
             return {"measured_unwarmed_paths": cold, "executed_paths": {"npu_full": 3}}
 
-        with patch.object(ci, "analyze_routes", side_effect=evidence):
+        with (
+            patch.object(ci, "analyze_routes", side_effect=evidence),
+            patch.object(ci.time, "monotonic", side_effect=lambda: elapsed),
+            patch.object(ci.time, "sleep", side_effect=advance),
+        ):
             ci.run_benchmark(
                 cfg, work, "candidate", ci.workload_config(cfg), execute=execute
             )

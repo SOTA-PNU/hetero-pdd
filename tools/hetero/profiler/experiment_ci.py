@@ -225,7 +225,9 @@ def run_benchmark(cfg, work, name, workload, *, execute=command, refresh=None):
                     with source.open("rb") as src:
                         shutil.copyfileobj(src, dest)
             history.replace(folder / "warmup_requests.jsonl")
-        deadline = time.monotonic() + 2
+        # Envoy can buffer a completed request's access record for its ten-second
+        # flush interval. Wait after the burst so routing and timing stay unchanged.
+        deadline = time.monotonic() + 12
         while True:
             if refresh:
                 refresh()
