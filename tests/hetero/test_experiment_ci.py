@@ -197,7 +197,7 @@ class ExperimentTests(unittest.TestCase):
             "input_tokens": 4,
             "output_tokens": 2,
         }
-        runs = []
+        runs: list[dict] = []
         for i, (arm, output, path) in enumerate(
             [
                 ("candidate", [0, 1], "pdd"),
