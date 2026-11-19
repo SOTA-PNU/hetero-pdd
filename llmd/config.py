@@ -67,6 +67,35 @@ def integer(value, name, low=1, high=None):
     return value
 
 
+OVERLAP_PROBE_DEFAULTS = {
+    "anchor_input_tokens": 128,
+    "anchor_output_tokens": 896,
+    "following_input_tokens": 64,
+    "following_output_tokens": 32,
+    "arrival_offset_ms": 2000,
+}
+
+
+def overlap_probe_settings(raw):
+    fields(raw, OVERLAP_PROBE_DEFAULTS, set(), "verify.overlap_probe")
+    probe = {**OVERLAP_PROBE_DEFAULTS, **raw}
+    for key, value in probe.items():
+        integer(
+            value,
+            f"verify.overlap_probe.{key}",
+            high=179999 if key == "arrival_offset_ms" else None,
+        )
+    return probe
+
+
+def check_probe_context(probe, capacity):
+    for key in ("anchor", "following"):
+        if probe[f"{key}_input_tokens"] + probe[f"{key}_output_tokens"] > capacity:
+            raise ValueError(
+                f"verify.overlap_probe.{key} exceeds engine context {capacity}"
+            )
+
+
 def fingerprint(obj):
     return hashlib.sha256(
         json.dumps(obj, sort_keys=True, separators=(",", ":")).encode()
@@ -235,7 +264,9 @@ def load(path):
     fields(common, ENGINE_KEYS, set(), "engine")
     verify = cfg["verify"]
     keys = {"input_tokens", "output_tokens", "requests", "concurrency"}
-    fields(verify, keys | {"paths"}, keys, "verify")
+    fields(verify, keys | {"paths", "overlap_probe"}, keys, "verify")
+    if "overlap_probe" in verify:
+        verify["overlap_probe"] = overlap_probe_settings(verify["overlap_probe"])
     for key in keys:
         integer(verify[key], f"verify.{key}")
     paths = verify.get("paths")
@@ -378,6 +409,8 @@ def load(path):
             )
         if verify["input_tokens"] + verify["output_tokens"] > params["max_model_len"]:
             raise ValueError(f"{name}: verification exceeds engine context")
+        if "overlap_probe" in verify:
+            check_probe_context(verify["overlap_probe"], params["max_model_len"])
         if "benchmark" in cfg:
             bench = cfg["benchmark"]
             if bench["input_tokens"] + bench["output_tokens"] > params["max_model_len"]:

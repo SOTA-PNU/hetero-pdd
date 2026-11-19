@@ -27,6 +27,7 @@ from urllib.parse import urlsplit
 
 from tools.hetero.loadgen import make_prompt
 
+from .config import check_probe_context, overlap_probe_settings
 from .runtime import confirm_listeners, fetch, save
 from .verify import PromptTokenizer
 
@@ -276,10 +277,42 @@ def _cancel_held_request(endpoint, scheduler_path, body):
     )
 
 
-def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
-    if not 0 < arrival_offset_s < 180:
-        raise ValueError("arrival offset must be between zero and the request timeout")
+def _pair_conditions(state, ordinary, arrival_offset_s):
+    experiment = state["experiment"]
+    probe = overlap_probe_settings(experiment["verify"].get("overlap_probe", {}))
+    for ep in state["endpoints"]:
+        check_probe_context(probe, ep["engine"]["max_model_len"])
+    if arrival_offset_s is not None:
+        if not 0 < arrival_offset_s < 180:
+            raise ValueError(
+                "arrival offset must be between zero and the request timeout"
+            )
+        probe["arrival_offset_ms"] = arrival_offset_s * 1000
+    if ordinary is None:
+        native = experiment.get("native", {})
+        handlers = [
+            p
+            for p in native.get("plugins", [])
+            if p.get("type") == "cost-route-handler"
+        ]
+        ordinary = (
+            len(handlers) == 1
+            and handlers[0].get("parameters", {}).get("preload") is False
+        )
+    return probe, ordinary
+
+
+def run(work, cancel=False, ordinary=None, arrival_offset_s=None):
     state = json.loads((work / "run.json").read_text())
+    probe, ordinary = _pair_conditions(state, ordinary, arrival_offset_s)
+    anchor_shape = (probe["anchor_input_tokens"], probe["anchor_output_tokens"])
+    following_shape = (
+        probe["following_input_tokens"],
+        probe["following_output_tokens"],
+    )
+    arrival_offset_s = probe["arrival_offset_ms"] / 1000
+    if cancel and ordinary:
+        raise ValueError("cancellation proof requires a preload-enabled profile")
     if state["status"] != "ready":
         raise ValueError("ready TikTok run required")
     confirm_listeners(state)
@@ -299,6 +332,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
         "run_id": state["run_id"],
         "endpoint": state["endpoint"],
         "status": "running",
+        "probe": probe,
     }
     path = work / (
         "ordinary-verification.json" if ordinary else "overlap-verification.json"
@@ -364,7 +398,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
     save(path, result)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
-            first = pool.submit(completion, 128, 896, 0, True)
+            first = pool.submit(completion, *anchor_shape, 0, True)
             if not anchor_sent.wait(20):
                 raise RuntimeError("anchor did not start")
             # Both arms release the same prompt pair at the same client offset.
@@ -377,14 +411,14 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
                 result["cancellation"] = _cancel_held_request(
                     state["endpoint"],
                     work / f"{decoder['id']}-admission.jsonl",
-                    payload(64, 32, 1),
+                    payload(*following_shape, 1),
                 )
                 result["first"] = first.result()
                 # The same producer/decoder must complete another genuine PD request.
-                result["recovery"] = completion(128, 32, 2)
+                result["recovery"] = completion(*following_shape, 2)
                 result["status"] = "passed"
                 return
-            following = completion(64, 32, 1)
+            following = completion(*following_shape, 1)
             result.update(first=first.result(), following=following)
         a, b = result["first"], result["following"]
         result["pair_timing"] = dict(
@@ -402,7 +436,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
         if ordinary:
             # Import metrics may be buffered until the worker's next event.
             # A post-pair unmeasured request also exercises slot reuse.
-            result["recovery"] = completion(128, 32, 2)
+            result["recovery"] = completion(*following_shape, 2)
             events = _rows(sorted(Path(decoder["events_dir"]).glob("events_*.jsonl")))
             sched = _rows([work / f"{decoder['id']}-admission.jsonl"])
             native = []
@@ -465,7 +499,7 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
         # Also verify identical inputs on the ordinary PD route after both
         # credits return and the native data source samples the idle decoder.
         time.sleep(1.2)
-        control = completion(64, 32, 1)
+        control = completion(*following_shape, 1)
         result["ordinary_pd_reference"] = control
         if following["token_ids"] != control["token_ids"]:
             raise ValueError("preloaded output differs from ordinary PD token IDs")
@@ -661,9 +695,14 @@ if __name__ == "__main__":
     mode.add_argument(
         "--ordinary",
         action="store_true",
+        default=None,
         help="measure the matched preload-off PDD control",
     )
-    parser.add_argument("--arrival-offset-s", type=float, default=2.0)
+    parser.add_argument(
+        "--arrival-offset-s",
+        type=float,
+        help="override verify.overlap_probe.arrival_offset_ms",
+    )
     mode.add_argument("--gpu-reference-run", type=Path)
     args = parser.parse_args()
     if args.gpu_reference_run:
