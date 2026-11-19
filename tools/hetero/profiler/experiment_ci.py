@@ -299,10 +299,15 @@ def profile(work: Path) -> dict:
     measured = analysis.client_metrics(rows, device_count=devices)
     (folder / "client_metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
     result = measured["summary"]
+    completed = result["success_count"]["value"]
+    failed = sum(
+        r["error"] is not None or not 200 <= r["http_status"] < 300 for r in rows
+    )
     counts = {
-        "completed": result["success_count"]["value"],
-        "failed": result["failure_count"]["value"],
-        "incomplete": workload["requests"] - result["success_count"]["value"],
+        "completed": completed,
+        "failed": failed,
+        # Includes missing rows and short streams without an explicit HTTP error.
+        "incomplete": workload["requests"] - completed - failed,
     }
     metrics = {}
     for key, _, _ in METRICS:
@@ -402,8 +407,11 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
             same_input = identity
         if same_input != identity:
             errors.append(f"{label}: benchmark inputs or generation settings differ")
-        if data["counts"]["incomplete"]:
-            errors.append(f"{label}: {data['counts']['incomplete']} incomplete")
+        counts = data["counts"]
+        if counts["failed"] or counts["incomplete"]:
+            errors.append(
+                f"{label}: {counts['failed']} failed, {counts['incomplete']} incomplete"
+            )
         route = data["route_evidence"]
         cold = route.get("measured_unwarmed_paths")
         unknown = route["executed_paths"].get("unverified")
@@ -411,7 +419,9 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
             errors.append(f"{label}: timings excluded; measured cold paths: {cold}")
         if unknown:
             errors.append(f"{label}: timings excluded; {unknown} unverified paths")
-        run["timing_valid"] = not (cold or unknown or data["counts"]["incomplete"])
+        run["timing_valid"] = not (
+            cold or unknown or counts["failed"] or counts["incomplete"]
+        )
         rows = list(live_rows(work / "profile/requests.jsonl"))
         if any(r["actual_input_tokens"] != cfg["input_tokens"] for r in rows):
             errors.append(f"{label}: engine received an unexpected prompt length")
@@ -540,6 +550,7 @@ def report(
     for measured in (candidate, baseline):
         if measured and (
             measured["counts"]["incomplete"]
+            or measured["counts"]["failed"]
             or any(value is None for value in measured["metrics"].values())
         ):
             raise RuntimeError("missing profiling requests or metrics")

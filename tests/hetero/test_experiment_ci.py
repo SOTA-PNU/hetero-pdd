@@ -161,6 +161,28 @@ class ExperimentTests(unittest.TestCase):
             [prefix[0] + "-warm", prefix[0] + "-live", prefix[1] + "-warm"],
         )
 
+    def test_counts_separate_http_errors_from_short_streams_and_missing_rows(self):
+        work = self.root / "arm"
+        profile = work / "profile"
+        profile.mkdir(parents=True)
+        fixture = next(
+            (Path(__file__).parent / "fixtures/real").glob("*/*/requests.jsonl")
+        )
+        row = json.loads(fixture.read_text().splitlines()[0])
+        rows = [
+            row,
+            row | {"http_status": 503, "error": "unavailable"},
+            row | {"actual_output_tokens": 1},
+        ]
+        (profile / "requests.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows)
+        )
+        (profile / "config.json").write_text(json.dumps({"requests": 4}))
+        (work / "run.json").write_text(json.dumps({"endpoints": [{"devices": [0]}]}))
+        with patch.object(ci, "analyze_routes", return_value={}):
+            data = ci.profile(work)
+        self.assertEqual(data["counts"], {"completed": 1, "failed": 1, "incomplete": 2})
+
     def test_report_keeps_variation_and_flags_disagreement_against_gpu(self):
         work = self.root / "case"
         config = {
