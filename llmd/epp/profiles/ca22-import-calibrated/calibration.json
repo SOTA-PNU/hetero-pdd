@@ -1,0 +1,111 @@
+{
+  "medians_sha256": "30eade14413b064df5e27423f37a1d4f56391c8f816078f4a292db303e7f107f",
+  "medians": {
+    "cuda": {
+      "128": {
+        "prefill_ms": 11.197096668183804,
+        "ttft_ms": 16.825157217681408,
+        "tpot_ms": 1.5122194984747517,
+        "count": 6
+      },
+      "256": {
+        "prefill_ms": 17.67897605895996,
+        "ttft_ms": 25.24950262159109,
+        "tpot_ms": 1.5085262036131275,
+        "count": 6
+      },
+      "512": {
+        "prefill_ms": 33.16480480134487,
+        "ttft_ms": 40.21191131323576,
+        "tpot_ms": 1.4860260510636913,
+        "count": 6
+      }
+    },
+    "rbln": {
+      "128": {
+        "prefill_ms": 13.913574628531933,
+        "ttft_ms": 20.065265707671642,
+        "tpot_ms": 9.413373506357594,
+        "count": 6
+      },
+      "256": {
+        "prefill_ms": 24.24374409019947,
+        "ttft_ms": 31.64448495954275,
+        "tpot_ms": 10.032609465622134,
+        "count": 6
+      },
+      "512": {
+        "prefill_ms": 46.47589102387428,
+        "ttft_ms": 54.809942841529846,
+        "tpot_ms": 11.14381933885236,
+        "count": 5
+      }
+    },
+    "pdd": {
+      "128": {
+        "prefill_ms": 12.853993102908134,
+        "ttft_ms": 88.41704484075308,
+        "tpot_ms": 9.379076230670176,
+        "receive_ms": 27.8911735,
+        "import_ms": 22.4643515,
+        "blocks": 1.0,
+        "copy_calls": 56.0,
+        "count": 6
+      },
+      "256": {
+        "prefill_ms": 19.05094739049673,
+        "ttft_ms": 147.03273680061102,
+        "tpot_ms": 10.035977638777226,
+        "receive_ms": 55.370772,
+        "import_ms": 43.484982,
+        "blocks": 2.0,
+        "copy_calls": 112.0,
+        "count": 6
+      },
+      "512": {
+        "prefill_ms": 42.978111654520035,
+        "ttft_ms": 248.48141614347696,
+        "tpot_ms": 11.048436525367922,
+        "receive_ms": 110.24253350000001,
+        "import_ms": 62.597682000000006,
+        "blocks": 4.0,
+        "copy_calls": 112.0,
+        "count": 6
+      }
+    }
+  },
+  "fitted_devices": {
+    "cuda": {
+      "prefillFixedMs": 3.4541822969913447,
+      "prefillMsPerToken": 0.05767670830079754,
+      "fullFixedMs": 7.030082999595576,
+      "decodeMsPerToken": 1.5085262036131275,
+      "decodeMsPerContextToken": 0
+    },
+    "rbln": {
+      "prefillFixedMs": 2.7975011616945196,
+      "prefillMsPerToken": 0.08509007394812737,
+      "fullFixedMs": 7.063924867127625,
+      "decodeMsPerToken": 8.7882867646924,
+      "decodeMsPerContextToken": 0.004482697100005185
+    }
+  },
+  "link": {
+    "dispatchFixedMs": 24.88422340127171,
+    "transferFixedMs": 0.45529274999999814,
+    "transferMsPerBlock": 27.448371535714287,
+    "importFixedMs": 12.90800149999999,
+    "importMsPerBlock": 12.831858714285719
+  },
+  "dispatch_residuals_ms": [
+    14.50516558271651,
+    24.88422340127171,
+    29.85963446153213
+  ],
+  "profile_sha256": {
+    "tiktok.yaml": "af9552d483ad39814cdc079d675b3ff35d7591e3c651fc6e058a908a7159e3f1",
+    "tiktok-off.yaml": "fa1eb57d5e101aa6139c7d83b8f3e1e098d75e825783377301d8458f657db1df",
+    "tiktok-fixed.yaml": "0191eca9f46d72a537498a6abc7bc24e575d559fbb3aa0dd48914a2c1c627cfc",
+    "tiktok-fixed-off.yaml": "c4e5924c145366bf200458e21ba02c9f16e059ae06ec21713a88987dfb4ea47f"
+  }
+}

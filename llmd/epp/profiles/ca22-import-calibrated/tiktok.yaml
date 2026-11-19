@@ -1,0 +1,83 @@
+# Independent CA22 calibration medians SHA256 30eade14413b064df5e27423f37a1d4f56391c8f816078f4a292db303e7f107f
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: tiktok
+- type: cost-route-handler
+  parameters:
+    ttlMillis: 5000
+    textBytesPerToken: 4
+    outputPriorTokens: 32
+    maxKvUtilization: 1.0
+    preload: true
+    maxPreloadWaitMs: 90
+    objective: workConserving
+    costs:
+      cuda:
+        prefillFixedMs: 3.454182
+        prefillMsPerToken: 0.057677
+        fullFixedMs: 7.030083
+        decodeMsPerToken: 1.508526
+        remainingDecodeTokens: 32
+        kvBytesPerToken: 114688
+        decodeMsPerContextToken: 0
+      rbln:
+        prefillFixedMs: 2.797501
+        prefillMsPerToken: 0.08509
+        fullFixedMs: 7.063925
+        decodeMsPerToken: 8.788287
+        decodeMsPerContextToken: 0.004483
+        remainingDecodeTokens: 32
+        kvBytesPerToken: 114688
+    links:
+      gpu0:
+        npu0:
+          dispatchFixedMs: 24.884223
+          transferFixedMs: 0.455293
+          transferMsPerBlock: 27.448372
+          importFixedMs: 12.908001
+          importMsPerBlock: 12.831859
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: label-selector-filter
+  name: prefill-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/producer: 'true'
+- type: label-selector-filter
+  name: decode-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/consumer: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 100ms
+    path: /metrics
+- type: core-metrics-extractor
+- type: live-state-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: max-score-picker
+- name: prefill
+  plugins:
+  - pluginRef: prefill-capability
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor
+    - pluginRef: live-state-extractor
