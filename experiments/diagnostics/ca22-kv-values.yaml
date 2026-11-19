@@ -1,0 +1,17 @@
+# Matched completed logical FP16 transfers at 56 calls per condition.
+apiVersion: hetero-pdd/ca22-value-import-v1
+physical_npu: 0
+uuid: bc133fcd-240a-473d-b194-8db986cdeb53
+layers: 28
+layer_shape: [2, 32, 8, 1, 128, 128]
+first_block: 5
+block_counts: [1, 4]
+import_threads: 12
+seed: 55619
+warmup: 5
+samples: 30
+cpu_call_kib: [256, 1024]
+cpu_samples: 12
+# diagnostic uses a bounded aligned scratch, the same logical copy_ and the
+# installed conversion oracle. worker runs the prebuilt guarded worker shim.
+canonical_implementation: diagnostic
