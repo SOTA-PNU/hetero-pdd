@@ -24,17 +24,29 @@ compiler가 계산한 양 끝의 동일한 model/KV group, 서로 다른 ID, 각
 
 ## 비용 입력과 관측값
 
-모델과 배포에 맞춰 `cost-route-handler.parameters`를 설정한다. 샘플 `costs`는 기능 검증용 합성값이다. ID별 row가 backend row보다 우선한다. `prefillMsPerToken`과 `decodeMsPerToken`은 서비스 시간의 선형 근사값이다. `remainingDecodeTokens`는 현재 배치의 예상 잔여 토큰 수다. `transferFixedMs`와 `transferMsPerToken`은 producer row에서 읽는다. 특정 링크의 측정값은 `links.<producer-id>.<consumer-id>.{transferFixedMs,transferMsPerToken}`로 덮어쓴다. `kvBytesPerToken`은 decoder의 토큰당 host KV 바이트다. 선택적 RFC3339 `validUntil`이 지나면 이 표를 쓰는 요청이 실패한다.
+실험 YAML에서 native EPP profile을 지정한다. `cost-route-handler.parameters.costs`는 endpoint ID별 row를 우선하고 backend row를 다음으로 사용한다. `tiktok.yaml`의 주석에 적용 가능한 모델 revision, 장치, 설정과 측정 조건이 있다. `selective.yaml`은 합성 비용 예제다. 선택적 RFC3339 `validUntil`이 지나면 요청이 실패한다.
 
-입력 길이 I는 공식 parser가 가진 토큰 ID 수를 우선한다. 텍스트만 있으면 UTF-8 바이트 수를 `textBytesPerToken`으로 나눠 올림한다. 구조화된 텍스트도 없으면 본문 바이트 수를 쓴다. 출력 길이 O는 `outputPriorTokens`와 명시된 출력 상한 중 작은 값이다. EOS 이후 엔진이 보낸 usage가 실제 관측값이다.
+입력 길이 I는 parser의 토큰 ID 수, 구조화된 텍스트의 UTF-8 byte 수, 본문 byte 수 순서로 구한다. byte 단위 입력에는 `textBytesPerToken`을 적용한다. EOS를 무시하고 별도의 stop 조건이 없는 고정 길이 요청에서는 명시한 출력 상한이 예상 길이 O가 된다. 일반 생성에서는 `outputPriorTokens`를 사용하고 클라이언트의 출력 상한이 작으면 그 값으로 제한한다.
 
-공식 metrics-data-source가 기본 1초 주기로 Prometheus를 읽는다. live-state-extractor는 그 scrape에서 본 waiting/running 합계, 최대 KV 사용률, rank 중 최소 host credit을 timestamp와 함께 저장한다. 누락되거나 유한하지 않은 series는 해당 scrape에서 결측 처리한다. `ttlMillis`보다 오래된 표본은 사용하지 않는다. Selective 후보는 queue, running, KV 사용률을 모두 요구하고 `maxKvUtilization`에 도달한 엔진을 제외한다. lookahead가 켜진 RBLN의 vLLM multiprocess gauge에 초기 표본이 없으면 해당 항목의 실제 scheduler gauge(hetero_pdd_waiting_requests, hetero_pdd_running_requests, hetero_pdd_kv_usage)를 읽는다. 양쪽 모두 없으면 결측 상태를 유지한다. Least-queue는 waiting을 요구한다. host credit만 누락되면 일반 full/PDD 비용 비교를 계속한다.
+| 항목 | 단위와 계산 |
+|---|---|
+| Prefill P | `prefillFixedMs + I × prefillMsPerToken` |
+| 평균 decode 간격 D | `decodeMsPerToken + decodeMsPerContextToken × (I + (O-1)/2)` |
+| Full TTFT | `W + fullFixedMs + P`. 기존 비용표에서 `fullFixedMs`를 생략하면 첫 토큰 비용으로 D를 더한다. |
+| Host 수신 T | `links.<producer>.<consumer>`의 `transferFixedMs + I × transferMsPerToken + blocks × transferMsPerBlock`. 링크가 없으면 producer row의 기존 fixed/token 값을 쓴다. |
+| Import H | 같은 링크의 `importFixedMs + blocks × importMsPerBlock` |
+| PDD 준비 A | `W_p + P_p + dispatchFixedMs`. GPU 예상 점유는 `W_p + P_p`에서 끝난다. |
+| 일반 PDD TTFT | `max(A, W_d) + T + H + D_d` |
+| Lookahead PDD TTFT | `max(A + T, W_d) + H + D_d` |
+| 완료 시각 | `TTFT + (O-1) × D`. 모든 시간은 현재 선택 시점 기준 ms다. |
 
-- 엔진 대기 W는 `floor((waiting + running) / slots) × remainingDecodeTokens × decodeMsPerToken`으로 추정한다. 관측 시점의 작업 수와 평균 잔여 비용을 사용하는 배치 근사다.
-- Full의 첫 토큰 예상 시각은 `W + I × prefillMsPerToken + decodeMsPerToken`이다. 완료 시각은 첫 토큰 시각에 나머지 출력 토큰의 decode 시간을 더한다.
-- PDD에서 P의 준비 시각 A는 `W_p + I × prefillMsPerToken_p`이고 전송 시간 T는 `transferFixedMs + I × transferMsPerToken`이다. 일반 PDD의 첫 decode 시작은 `max(A, W_d) + T`로 추정한다.
-- TikTok은 decoder가 실행 중이고 `W_d > A`이며 EPP의 미완료 예약을 차감한 host credit이 충분할 때 `max(A + T, W_d)`를 쓴다. 필요 byte는 decoder block 단위로 올림한 토큰 수와 `kvBytesPerToken`의 곱이다. 실제 엔진의 슬롯·byte 예약과 host→device 동기화가 최종 admission을 결정한다.
-- 기본은 예상 완료 시간이 가장 짧은 후보를 고른다. 선택적 요청 헤더 `x-pdd-ttft-ms`가 있으면 먼저 TTFT 목표 초과량을 최소화하고 완료 시간과 native profile 점수로 동률을 푼다. 선택 이유·실행 경로는 응답의 `x-hetero-{policy,reason,path,prefill,target,preload}`와 EPP 로그에 기록한다. `hetero_route_prediction`의 예측과 `hetero_route_finished`의 usage를 동일 `request_id`로 연결해 예측 오차를 계산할 수 있다.
+입력에 필요한 KV block 수는 decoder의 block 크기로 올림한다. Host 수신 예약은 정렬된 토큰 수와 `kvBytesPerToken`의 곱을 사용한다. `preload`가 켜지고 수신 도착 시각에 이전 요청의 예상 decode 구간, decoder 대기, host 슬롯 및 byte 예산이 모두 있을 때만 선행 수신을 선택한다. 슬롯·byte 상한을 제공하는 배포에서는 최신 gauge와 EPP 미완료 예약을 함께 사용한다. 최종 할당과 안전한 import 시점은 엔진이 확인한다.
+
+공식 metrics-data-source가 waiting/running 합계, 최대 KV 사용률, rank 중 최소 host headroom을 수집한다. RBLN scheduler가 state transition마다 갱신한 gauge가 우선하고 없는 항목은 vLLM 통계를 사용한다. `ttlMillis`보다 오래된 표본, queue/running/KV 결측, `maxKvUtilization`에 도달한 엔진은 제외한다. Host credit만 결측인 경우 일반 full/PDD는 계속 비교한다.
+
+한 EPP 안에서 경로 선택과 단계별 예약이 같은 lock을 사용한다. 슬롯별 대기 W에는 이미 배정한 요청의 실제 길이와 예측 단계 시간이 반영된다. 들어온 stream data event 수로 잔여 decode 추정을 갱신한다. 여러 토큰이 하나의 event로 합쳐지면 근사값이다. 동일 scrape에 보일 수 있는 local 요청 수를 관측 queue/running 합계에서 빼고, 출처를 식별할 수 없는 초과 작업에만 `remainingDecodeTokens`를 적용한다. 값이 없으면 출력 prior를 쓴다. 정상 완료·오류·연결 종료에 대한 최종 ResponseBody hook이 예약을 해제한다. 이미 종료된 요청의 시각만 다음 유효 scrape와 대응시키기 위해 보관한다. 실제 request ID가 없는 외부 scrape와 다른 EPP replica의 작업량은 추정에 의존한다.
+
+`objective: minimumCompletion`은 예상 완료 시간을 최소화한다. `workConserving`은 이 EPP에 미완료 요청이 있고 후보의 primary 슬롯 사용 가능 여부가 다르면 즉시 시작 가능한 primary를 우선한다. 두 경우 모두 선택적 `x-pdd-ttft-ms`의 목표 초과량이 우선하고, 동률은 native profile 점수로 푼다. `hetero_route_prediction`에 입력/출력 추정 근거, 단계별 ms, 예측한 host 수신 단축 시간이 기록된다. `request_id`로 클라이언트 결과와 `hetero_route_finished`를 연결한다. 실제 overlap 판정에는 worker 이벤트와 admission 기록을 사용한다.
 
 ## 연구 구현의 대응 관계
 

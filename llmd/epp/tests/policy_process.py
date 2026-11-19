@@ -150,6 +150,22 @@ def exercise(policy, work, bin_dir, *, flip=False):
             }
         )
     native = yaml.safe_load((PROFILES / f"{policy}.yaml").read_text())
+    if policy == "tiktok":
+        # The fixture has synthetic timings and endpoint IDs. Keep the
+        # transport/credit contract test independent of hardware calibration.
+        pricing = next(
+            p["parameters"]
+            for p in native["plugins"]
+            if p["type"] == "cost-route-handler"
+        )
+        synthetic = yaml.safe_load((PROFILES / "selective.yaml").read_text())
+        costs = next(
+            p["parameters"]
+            for p in synthetic["plugins"]
+            if p["type"] == "cost-route-handler"
+        )
+        pricing.clear()
+        pricing.update(costs, preload=True)
     if policy == "trace-allocation":
         replay = next(
             x["parameters"]
