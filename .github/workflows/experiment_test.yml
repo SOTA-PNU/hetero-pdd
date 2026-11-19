@@ -1,0 +1,181 @@
+name: Experiment Test
+
+on:
+  push:
+    branches:
+      - main
+      - feat/pdd-scheduling-llmd
+    paths:
+      - 'experiments/*.yaml'
+      - 'experiments/*.yml'
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: Algorithm YAML filename in experiments/ (e.g. fixed-pdd.yaml)
+        required: true
+        type: string
+
+concurrency:
+  group: pdd-test
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare experiments
+    runs-on: self-hosted
+    outputs:
+      files: ${{ steps.changed.outputs.files }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select experiments
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+          MANUAL_EXPERIMENT: ${{ inputs.experiment }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            if [[ ! "$MANUAL_EXPERIMENT" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*\.ya?ml$ ]]; then
+              echo "Enter a YAML filename from experiments/" >&2
+              exit 1
+            fi
+            experiment="experiments/$MANUAL_EXPERIMENT"
+            if [[ ! -f "$experiment" ]]; then
+              echo "$experiment does not exist" >&2
+              exit 1
+            fi
+            files=$(jq -cn --arg file "$experiment" '[$file]')
+          else
+            base="$BEFORE"
+            if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              base=$(git hash-object -t tree --stdin </dev/null)
+            fi
+            files=$(git diff --name-only --diff-filter=ACMR -z "$base" "$GITHUB_SHA" -- \
+              ':(glob)experiments/*.yaml' ':(glob)experiments/*.yml' |
+              jq -Rsc 'split("\u0000") | map(select(length > 0))')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "Selected experiments: $files"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Validate selected experiments
+        env:
+          FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          python3 -m pip install PyYAML==6.0.3
+          jq -r '.[]' <<< "$FILES" | while IFS= read -r experiment; do
+            echo "Validating $experiment"
+            python3 -m llmd validate "$experiment" > /dev/null
+          done
+
+  experiment:
+    name: ${{ matrix.experiment }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.files != '[]' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        experiment: ${{ fromJSON(needs.prepare.outputs.files) }}
+    runs-on: self-hosted
+    env:
+      EXPERIMENT: ${{ matrix.experiment }}
+      EXPERIMENT_CONTAINER: experiment-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build experiment image
+        run: |
+          docker build \
+            --build-context wheels=/opt/wheels \
+            --label hetero-pdd=1 \
+            -f docker/Dockerfile \
+            -t hetero-pdd .
+
+      - name: Remove untagged PDD images
+        run: docker image prune -f --filter label=hetero-pdd=1
+
+      - name: Start experiment container
+        run: |
+          model_cache="$HOME/.cache/huggingface"
+          result_root="$RUNNER_TEMP/experiment-results/${{ strategy.job-index }}"
+          mkdir -p -- "$model_cache" "$result_root"
+          docker run --rm --init -d \
+            --name "$EXPERIMENT_CONTAINER" \
+            --gpus all \
+            --device rebellions.ai/npu=all \
+            --network host \
+            --ipc host \
+            --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$model_cache,dst=/tmp/pdd-home/hf-cache" \
+            --mount "type=bind,src=$result_root,dst=/tmp/pdd-home/results" \
+            -e HF_HOME=/tmp/pdd-home/hf-cache \
+            -e LLMD_BIN_DIR=/tmp/pdd-home/llmd-bin \
+            hetero-pdd sleep infinity
+
+      - name: Build llm-d binaries
+        run: docker exec "$EXPERIMENT_CONTAINER" bash -lc 'llmd/serving/build.sh "$LLMD_BIN_DIR"'
+
+      - name: Test experiment
+        run: |
+          docker exec \
+            -e EXPERIMENT="$EXPERIMENT" \
+            "$EXPERIMENT_CONTAINER" bash -lc \
+            '"$CUDA_PY" -m tools.hetero.profiler.experiment_ci "$EXPERIMENT" --result-dir /tmp/pdd-home/results'
+
+      - name: Upload experiment profiles
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: experiment-profile-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/experiment-results/${{ strategy.job-index }}
+          if-no-files-found: ignore
+
+      - name: Remove experiment container
+        if: ${{ always() }}
+        run: |
+          if docker container inspect "$EXPERIMENT_CONTAINER" >/dev/null 2>&1; then
+            docker rm -f "$EXPERIMENT_CONTAINER"
+          fi
+
+  results:
+    name: Results / ${{ matrix.experiment }}
+    needs: [prepare, experiment]
+    if: ${{ always() && needs.prepare.result == 'success' && needs.prepare.outputs.files != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        experiment: ${{ fromJSON(needs.prepare.outputs.files) }}
+    runs-on: self-hosted
+    steps:
+      - name: Download experiment profile
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: experiment-profile-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: experiment-result
+
+      - name: Summarize experiment
+        env:
+          EXPERIMENT: ${{ matrix.experiment }}
+        run: |
+          set -euo pipefail
+          if [[ -f experiment-result/summary.md ]]; then
+            cat experiment-result/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## $EXPERIMENT: no completed result" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

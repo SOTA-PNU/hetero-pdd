@@ -27,7 +27,7 @@ class RuntimeTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.work = Path(temp.name)
         ex = ROOT / "experiments"
-        self.base = yaml.safe_load((ex / "baseline.yaml").read_text())
+        self.base = yaml.safe_load((ex / "qwen3-baseline.yaml").read_text())
         for key in ("model", "profile"):
             self.base[key] = str((ex / self.base[key]).resolve())
         self.bins = self.work / "bin"

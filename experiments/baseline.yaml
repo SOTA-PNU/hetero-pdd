@@ -1,7 +1,0 @@
-apiVersion: hetero-pdd/v2
-model: models/qwen3-0.6b.yaml
-profile: ../llmd/epp/profiles/baseline.yaml
-endpoints:
-  - {id: gpu0, backend: cuda, roles: [full], devices: [0], port: 18001}
-instrumentation: {rbln_events: true}
-verify: {paths: [full], input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
