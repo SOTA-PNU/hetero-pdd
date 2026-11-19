@@ -129,6 +129,38 @@ class ExperimentTests(unittest.TestCase):
                     self.assertEqual(row["actual_input_tokens"], length)
                     self.assertEqual(row["seed"], 13)
 
+    def test_retry_archives_cold_burst_and_preserves_input_identity(self):
+        cfg = self.load()
+        work = self.root / "arm"
+        prefix = []
+
+        def execute(*argv):
+            directory = Path(argv[argv.index("--run-dir") + 1])
+            directory.mkdir(parents=True)
+            uid = argv[argv.index("--workload") + 1]
+            prefix.append(uid)
+            (directory / "warmup_requests.jsonl").write_text(uid + "-warm\n")
+            (directory / "requests.jsonl").write_text(uid + "-live\n")
+
+        def evidence(_work):
+            cold = ["npu_full"] if len(prefix) == 1 else []
+            return {"measured_unwarmed_paths": cold, "executed_paths": {"npu_full": 3}}
+
+        with patch.object(ci, "analyze_routes", side_effect=evidence):
+            ci.run_benchmark(
+                cfg, work, "candidate", ci.workload_config(cfg), execute=execute
+            )
+        self.assertEqual(len(set(prefix)), 2)
+        self.assertTrue((work / "excluded-cold-burst-1/requests.jsonl").exists())
+        self.assertEqual(
+            (work / "profile/requests.jsonl").read_text().splitlines(),
+            [prefix[1] + "-live"],
+        )
+        self.assertEqual(
+            (work / "profile/warmup_requests.jsonl").read_text().splitlines(),
+            [prefix[0] + "-warm", prefix[0] + "-live", prefix[1] + "-warm"],
+        )
+
     def test_report_keeps_variation_and_flags_disagreement_against_gpu(self):
         work = self.root / "case"
         config = {
@@ -189,6 +221,13 @@ class ExperimentTests(unittest.TestCase):
             },
         )
         self.assertTrue((self.root / "benchmark-summary.json").is_file())
+        runs[2]["profile"]["route_evidence"]["measured_unwarmed_paths"] = ["pdd"]
+        retry = ci.summarize_runs(self.root, runs)
+        self.assertEqual(
+            retry["arms"]["candidate"]["output_tokens_per_second"]["values"], [1]
+        )
+        self.assertFalse(runs[2]["timing_valid"])
+        self.assertTrue(any("cold paths" in err for err in retry["errors"]))
 
     def test_legacy_workload_defaults(self):
         self.raw.pop("benchmark")

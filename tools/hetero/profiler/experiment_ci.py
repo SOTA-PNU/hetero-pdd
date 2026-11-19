@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import statistics
 import subprocess
 import sys
@@ -198,6 +199,50 @@ def benchmark_args(cfg: dict, work: Path, name: str, workload: dict) -> list[str
     ]
 
 
+def run_benchmark(cfg, work, name, workload, *, execute=command, refresh=None):
+    """Repeat a burst only if it was the first real warmup of a measured route."""
+    args = benchmark_args(cfg, work, name, workload)
+    if "warmup" not in workload:
+        execute(*args)
+        return
+    folder = work / "profile"
+    previous = None
+    for attempt in range(3):
+        argv = list(args)
+        label = argv.index("--workload") + 1
+        argv[label] += f"-burst{attempt + 1}"
+        execute(*argv)
+        if previous is not None:
+            # A discarded measured burst warmed every path its requests completed.
+            # Keep all its raw timestamps outside the throughput measurement.
+            history = folder / "warmup-history.tmp"
+            with history.open("wb") as dest:
+                for source in (
+                    previous / "warmup_requests.jsonl",
+                    previous / "requests.jsonl",
+                    folder / "warmup_requests.jsonl",
+                ):
+                    with source.open("rb") as src:
+                        shutil.copyfileobj(src, dest)
+            history.replace(folder / "warmup_requests.jsonl")
+        deadline = time.monotonic() + 2
+        while True:
+            if refresh:
+                refresh()
+            evidence = analyze_routes(work)
+            if (
+                not evidence["executed_paths"].get("unverified")
+                or time.monotonic() >= deadline
+            ):
+                break
+            # Gateway access logs can flush after the streaming client has returned.
+            time.sleep(0.25)
+        if not evidence["measured_unwarmed_paths"] or attempt == 2:
+            return
+        previous = work / f"excluded-cold-burst-{attempt + 1}"
+        folder.rename(previous)
+
+
 def run_service(
     experiment: Path,
     root: Path,
@@ -226,9 +271,7 @@ def run_service(
             verify += ["--reference", str(reference)]
         steps.run(f"{name}: verify", command, *verify)
         if workload is not None:
-            steps.run(
-                f"{name}: load", command, *benchmark_args(cfg, work, name, workload)
-            )
+            steps.run(f"{name}: load", run_benchmark, cfg, work, name, workload)
         failed = False
     finally:
         if (work / "run.json").exists():
@@ -313,7 +356,6 @@ def benchmark_runs(experiment, root, cfg, workload, answers, steps):
 def summarize_runs(root: Path, runs: list[dict]) -> dict:
     """Aggregate independent measured bursts; compare token IDs at each input index."""
     errors = []
-    caveats = []
     groups = {}
     reference = None
     reference_label = None
@@ -363,10 +405,13 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
         if data["counts"]["incomplete"]:
             errors.append(f"{label}: {data['counts']['incomplete']} incomplete")
         route = data["route_evidence"]
-        if cold := route.get("measured_unwarmed_paths"):
-            caveats.append(f"{label}: measured routes missing from warmup: {cold}")
-        if unknown := route["executed_paths"].get("unverified"):
-            caveats.append(f"{label}: {unknown} unverified execution paths")
+        cold = route.get("measured_unwarmed_paths")
+        unknown = route["executed_paths"].get("unverified")
+        if cold:
+            errors.append(f"{label}: timings excluded; measured cold paths: {cold}")
+        if unknown:
+            errors.append(f"{label}: timings excluded; {unknown} unverified paths")
+        run["timing_valid"] = not (cold or unknown or data["counts"]["incomplete"])
         rows = list(live_rows(work / "profile/requests.jsonl"))
         if any(r["actual_input_tokens"] != cfg["input_tokens"] for r in rows):
             errors.append(f"{label}: engine received an unexpected prompt length")
@@ -384,7 +429,8 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
                 errors.append(
                     f"{label}: output ID mismatch on {len(mismatches)} requests"
                 )
-        groups.setdefault(name, []).append(data["metrics"])
+        if run["timing_valid"]:
+            groups.setdefault(name, []).append(data["metrics"])
     aggregates = {}
     for name, measurements in groups.items():
         arm = aggregates[name] = {}
@@ -408,7 +454,6 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
         "runs": runs,
         "arms": aggregates,
         "errors": errors,
-        "caveats": caveats,
     }
     (root / "benchmark-summary.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
@@ -480,7 +525,6 @@ def benchmark_lines(result):
             ),
             route_rows,
         ),
-        *[f"- {c}" for c in result["caveats"]],
     ]
 
 
