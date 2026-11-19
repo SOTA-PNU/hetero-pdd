@@ -54,7 +54,7 @@ def worker_evidence(work, requests):
         for r in requests
         if r.get("transfer")
     }
-    events = defaultdict(dict)
+    events: dict[tuple[str, str | None], dict[str, dict]] = defaultdict(dict)
     for ep in {ep for ep, _ in transfers}:
         for path in sorted((work / "events" / ep).glob("events_*.jsonl")):
             for ev in live_rows(path):

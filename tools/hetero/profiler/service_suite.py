@@ -225,7 +225,7 @@ def service_lines(runs):
 def execute_suite(path, root, resident=None):
     cells = materialize(path, root / "config")
     shutil.copyfile(path, root / "suite.yaml")
-    runs = {cell: [] for cell in cells}
+    runs: dict[str, list[dict]] = {cell: [] for cell in cells}
     arms = [k for k in next(iter(cells.values())) if k != "gpu-reference"]
     signature = None
     live = None
@@ -284,7 +284,7 @@ def execute_suite(path, root, resident=None):
                     (root / cell / "partial.json").write_text(
                         json.dumps(runs[cell], indent=2) + "\n"
                     )
-    errors = []
+    errors: list[str] = []
     for cell, rows in runs.items():
         folder = root / cell
         result = ci.summarize_runs(folder, rows, gpu_reference=folder / "gpu-reference")

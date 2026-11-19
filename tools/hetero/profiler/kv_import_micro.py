@@ -152,7 +152,7 @@ def vendor_test(cfg, out):
 
 
 def ranges(ids, maximum):
-    runs = []
+    runs: list[list[int]] = []
     for i in ids:
         if runs and i == runs[-1][1] and i - runs[-1][0] < maximum:
             runs[-1][1] += 1
@@ -266,6 +266,7 @@ def sample(case, buffers, sync):
 
 def validate(case, buffers, sync, materialize):
     inputs, outputs, expected = buffers
+    slices: list[slice | tuple[slice, int]]
     if case["layout"] == "flat":
         slices = [slice(2048, 2048 + (case["mib"] << 19))]
     else:
@@ -499,7 +500,7 @@ def run(cfg, out):
             thread_runtime_trace=validate(case, buf, sync, materialize),
         )
         save(out / "plans.json", plans)
-    results = {name: [] for name in names}
+    results: dict[str, list[dict]] = {name: [] for name in names}
     blank = []
     with (out / "samples.jsonl").open("x", buffering=1) as stream:
         for repeat in range(-cfg["warmup"], cfg["samples"]):
