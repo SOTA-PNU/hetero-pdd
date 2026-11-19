@@ -109,9 +109,10 @@ def write_profiles(source, templates, output):
         for backend, data in changes.items():
             table[backend].update({k: round(v, 6) for k, v in data.items()})
         # Restrict calibration to the physical pair described by these samples.
-        (producer,) = table["links"]
-        (consumer,) = table["links"][producer]
-        table["links"][producer][consumer].update(
+        links = handler["parameters"]["links"]
+        (producer,) = links
+        (consumer,) = links[producer]
+        links[producer][consumer].update(
             {k: round(v, 6) for k, v in link.items()}
         )
         profile = output / path.name
