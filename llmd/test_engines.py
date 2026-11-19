@@ -39,6 +39,7 @@ class EngineTests(unittest.TestCase):
                 if ep["kind"] == "npu":
                     ep["engine"]["coalesce_kv_import"] = True
                     ep["engine"]["kv_import_threads"] = 8
+                    ep["engine"]["canonicalize_kv_import"] = True
                 spec = engines.engine_spec(
                     self.model,
                     ep,
@@ -55,6 +56,7 @@ class EngineTests(unittest.TestCase):
                 if ep["kind"] == "npu":
                     self.assertEqual(env["VLLM_RBLN_COALESCE_KV_IMPORT"], "1")
                     self.assertEqual(env["VLLM_RBLN_KV_IMPORT_THREADS"], "8")
+                    self.assertEqual(env["VLLM_RBLN_CANONICALIZE_KV_IMPORT"], "1")
                     self.assertEqual(env["CUDA_VISIBLE_DEVICES"], "1,3")
                     self.assertEqual(transfer["kv_buffer_device"], "cpu")
                 ep["roles"] = ["full"]
@@ -99,6 +101,7 @@ class EngineTests(unittest.TestCase):
             publish()
         ep["engine"]["coalesce_kv_import"] = True
         ep["engine"]["kv_import_threads"] = 8
+        ep["engine"]["canonicalize_kv_import"] = True
         with cache() as (again, meta, _):
             self.assertTrue(meta["reused"])
             self.assertEqual(again, built)

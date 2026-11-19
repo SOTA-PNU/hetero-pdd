@@ -2680,6 +2680,8 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                     reorder=os.environ.get("VLLM_RBLN_PDD_LAYOUT_REORDER") == "1",
                     coalesce=os.environ.get("VLLM_RBLN_COALESCE_KV_IMPORT") == "1",
                     import_threads=int(import_threads) if import_threads else None,
+                    canonicalize=os.environ.get("VLLM_RBLN_CANONICALIZE_KV_IMPORT")
+                    == "1",
                 )
             )
 

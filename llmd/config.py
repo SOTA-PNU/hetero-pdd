@@ -135,6 +135,7 @@ ENGINE_KEYS = set(DEFAULT_ENGINE) | {
     "extra_args",
     "compile_options",
     "coalesce_kv_import",
+    "canonicalize_kv_import",
     "kv_import_threads",
 }
 
@@ -524,6 +525,14 @@ def load(path):
         ):
             raise ValueError(
                 "coalesce_kv_import requires a boolean on an RBLN consumer"
+            )
+        if "canonicalize_kv_import" in params and (
+            type(params["canonicalize_kv_import"]) is not bool
+            or ep["backend"] != "rbln"
+            or "decode" not in roles
+        ):
+            raise ValueError(
+                "canonicalize_kv_import requires a boolean on an RBLN consumer"
             )
         if "kv_import_threads" in params:
             if ep["backend"] != "rbln" or "decode" not in roles:

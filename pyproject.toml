@@ -188,3 +188,6 @@ extend-ignore-identifiers-re = ["NVML_*", ".*Unc.*", ".*_thw",
      ".*[Tt]h[rR].*"]
 extend-ignore-words-re = []
 extend-ignore-re = []
+
+[tool.setuptools.package-data]
+"vllm_rbln.v1.worker" = ["native/kv_canonical.cc"]

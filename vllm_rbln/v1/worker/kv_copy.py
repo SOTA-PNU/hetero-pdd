@@ -112,15 +112,20 @@ def copy_kv_blocks(
     reorder: bool,
     coalesce: bool,
     import_threads: int | None = None,
+    canonicalize: bool = False,
 ) -> None:
     args = (src_kv_caches, dst_kv_caches, src_block_ids, dst_block_ids, direction)
     if direction == "h2d" and (import_threads is not None or metrics_v2.EVENTS_ENABLED):
         with import_thread_scope(import_threads) as limits:
             if metrics_v2.EVENTS_ENABLED:
                 metrics_v2.record_copy_threads(import_threads, *limits)
-            _copy_kv_blocks(*args, reorder=reorder, coalesce=coalesce)
+            _copy_kv_blocks(
+                *args, reorder=reorder, coalesce=coalesce, canonicalize=canonicalize
+            )
     else:
-        _copy_kv_blocks(*args, reorder=reorder, coalesce=coalesce)
+        _copy_kv_blocks(
+            *args, reorder=reorder, coalesce=coalesce, canonicalize=canonicalize
+        )
 
 
 def _copy_kv_blocks(
@@ -132,6 +137,7 @@ def _copy_kv_blocks(
     *,
     reorder: bool,
     coalesce: bool,
+    canonicalize: bool,
 ) -> None:
     if not src_kv_caches or not dst_kv_caches or not src_block_ids or not dst_block_ids:
         return
@@ -151,6 +157,10 @@ def _copy_kv_blocks(
             ids = sorted(ids)
         runs = block_runs(ids)
         lowest, highest = min(src_block_ids), max(src_block_ids)
+    canonical = canonicalize and h2d and not reorder
+    if canonical:
+        from vllm_rbln.v1.worker import kv_canonical
+    accepted = accepted_bytes = rejected = scratch_capacity = canonical_ns = prep_ns = 0
     copy_ns = reorder_ns = calls = 0
     for name, dst_cache in dst_kv_caches.items():
         src_cache = src_kv_caches[name]
@@ -194,12 +204,38 @@ def _copy_kv_blocks(
                     assert source.shape == target.shape and source.dtype == target.dtype
                 if profile:
                     started = time.monotonic_ns()
-                target.copy_(source)
+                if canonical:
+                    candidate_start = time.monotonic_ns() if profile else 0
+                    size, scratch, candidate_calls, prepared_ns = (
+                        kv_canonical.copy_if_supported(source, target, profile=profile)
+                    )
+                    if profile:
+                        prep_ns += prepared_ns
+                        canonical_ns += time.monotonic_ns() - candidate_start
+                        scratch_capacity = max(scratch_capacity, scratch)
+                    if size:
+                        accepted += 1
+                        accepted_bytes += size
+                    else:
+                        rejected += 1
+                        calls += candidate_calls
+                        target.copy_(source)
+                else:
+                    target.copy_(source)
                 if profile:
                     copy_ns += time.monotonic_ns() - started
     if profile:
         # Report the host-call envelope without introducing a device barrier.
         try:
             metrics_v2.add_copy_stats(copy_ns, reorder_ns, len(src_block_ids), calls)
+            if canonicalize:
+                metrics_v2.record_canonical_copy(
+                    accepted,
+                    accepted_bytes,
+                    rejected if canonical else calls,
+                    scratch_capacity,
+                    canonical_ns,
+                    prep_ns,
+                )
         except Exception as exc:
             metrics_v2.disable_events(exc)

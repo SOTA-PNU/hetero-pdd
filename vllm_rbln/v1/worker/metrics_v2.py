@@ -118,6 +118,7 @@ def record_event(kind: str, **fields) -> None:
 def reset_copy_stats() -> None:
     _copy_stats.totals = (0, 0, 0, 0)
     _copy_stats.threads = {}
+    _copy_stats.canonical = {}
 
 
 def record_copy_threads(
@@ -130,8 +131,26 @@ def record_copy_threads(
     )
 
 
+def record_canonical_copy(
+    accepted: int, size: int, rejected: int, scratch: int, elapsed_ns: int, prep_ns: int
+) -> None:
+    fields = getattr(_copy_stats, "canonical", {})
+    _copy_stats.canonical = dict(
+        canonical_requested=True,
+        canonical_copy_calls=fields.get("canonical_copy_calls", 0) + accepted,
+        canonical_bytes=fields.get("canonical_bytes", 0) + size,
+        canonical_fallback_calls=fields.get("canonical_fallback_calls", 0) + rejected,
+        canonical_scratch_bytes=max(scratch, fields.get("canonical_scratch_bytes", 0)),
+        canonical_prep_ns=fields.get("canonical_prep_ns", 0) + prep_ns,
+        canonical_envelope_ns=fields.get("canonical_envelope_ns", 0) + elapsed_ns,
+    )
+
+
 def copy_thread_fields() -> dict[str, int | None]:
-    return getattr(_copy_stats, "threads", {})
+    return {
+        **getattr(_copy_stats, "threads", {}),
+        **getattr(_copy_stats, "canonical", {}),
+    }
 
 
 def add_copy_stats(h2d_ns: int, reorder_ns: int, num_blocks: int, calls: int) -> None:
