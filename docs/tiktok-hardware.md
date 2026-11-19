@@ -6,6 +6,8 @@ At the representative load, TikTok delivered 675.32 tokens/s (median of three), 
 
 Separately, on matched PDD assignments the staged policy delivered 92.77 vs 89.45 tokens/s with 15 verified overlaps. The 350 ms fixed-arrival probe on the final code reduced median two-request makespan from 1,638.41 to 1,595.43 ms and median decoder handoff from 54.06 to 23.05 ms. The anchor and following request of every final staged pair replayed exactly on the independent CUDA full gateway. Each matched ordinary pair used the same payloads and produced identical token IDs.
 
+The follow-up study measures the FP16 import path, compares the optimized worker under fixed and automatic routing, and checks every measured output against GPU full. [CA22 KV import study](ca22-kv-import.md)
+
 ## Final automatic routing results
 
 Each latency cell is the median of the per-run client statistics in milliseconds. The throughput column lists individual runs in execution order. Route counts cover all measured requests for the arm. All rows use the same engine limits.
