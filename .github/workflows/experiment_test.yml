@@ -127,6 +127,7 @@ jobs:
         run: |
           docker exec \
             -e GITHUB_SHA \
+            -e GITHUB_SHA="$GITHUB_SHA" \
             -e EXPERIMENT="$EXPERIMENT" \
             "$EXPERIMENT_CONTAINER" bash -lc \
             '"$CUDA_PY" -m tools.hetero.profiler.experiment_ci "$EXPERIMENT" --result-dir /tmp/pdd-home/results'
