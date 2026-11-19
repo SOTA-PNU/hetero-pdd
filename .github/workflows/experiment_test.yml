@@ -122,6 +122,8 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --mount "type=bind,src=$model_cache,dst=/tmp/pdd-home/hf-cache" \
             --mount "type=bind,src=$result_root,dst=/tmp/pdd-home/results" \
+            -e USER="$(id -un)" \
+            -e LOGNAME="$(id -un)" \
             -e HF_HOME=/tmp/pdd-home/hf-cache \
             -e LLMD_BIN_DIR=/tmp/pdd-home/llmd-bin \
             hetero-pdd sleep infinity
