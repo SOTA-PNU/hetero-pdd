@@ -1,0 +1,31 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: baseline
+  parameters:
+    reason: uniform_random_full
+- type: single-profile-handler
+- type: random-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: random-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor

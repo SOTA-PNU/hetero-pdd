@@ -428,6 +428,11 @@ def _create_connector_scheduler():
     sched._reqs_not_processed = set()
     sched._block_ids_need_save = {}
     sched._kv_lease_duration = 30
+    # Match upstream constructor state; this fixture bypasses __init__.
+    sched._heartbeat_by_engine = {}
+    sched._heartbeat_req_engine = {}
+    sched._last_heartbeat_time = 0.0
+    sched._heartbeat_interval = 5
 
     return sched
 
@@ -669,6 +674,7 @@ def _build_connector_worker(
 
     vllm_config = MagicMock()
     vllm_config.cache_config = CacheConfig(block_size=block_size)
+    vllm_config.kv_transfer_config.get_from_extra_config.side_effect = {}.get
     kv_cache_config = MagicMock()
     kv_cache_config.num_blocks = num_blocks
     if kv_cache_specs is not None:

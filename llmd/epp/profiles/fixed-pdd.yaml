@@ -1,0 +1,40 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: fixed-pdd
+  parameters:
+    reason: compatible_pair_weighted_score
+- type: pair-handler
+- type: max-score-picker
+- type: label-selector-filter
+  name: prefill-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/producer: 'true'
+- type: label-selector-filter
+  name: decode-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/consumer: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-capability
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor

@@ -1,0 +1,31 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: greedy
+  parameters:
+    reason: first_available_fifo_slot
+- type: first-available-handler
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor

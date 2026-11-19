@@ -1,0 +1,40 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: least-queue
+  parameters:
+    reason: minimum_fresh_waiting_queue
+- type: single-profile-handler
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: fresh-queue-filter
+  parameters:
+    ttlMillis: 5000
+- type: queue-scorer
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+- type: live-state-extractor
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: fresh-queue-filter
+  - pluginRef: queue-scorer
+    weight: 1
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor
+    - pluginRef: live-state-extractor

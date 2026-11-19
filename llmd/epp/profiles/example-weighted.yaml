@@ -1,0 +1,45 @@
+apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+plugins:
+- type: reserved-field-guard
+- type: route-contract
+  name: example-weighted
+  parameters:
+    reason: highest_weighted_label_score
+- type: single-profile-handler
+- type: max-score-picker
+- type: label-selector-filter
+  name: full-capability
+  parameters:
+    matchLabels:
+      pdd.sota.dev/full: 'true'
+- type: endpoint-label-scorer
+  name: prefer-cuda
+  parameters:
+    key: pdd.sota.dev/backend
+    value: cuda
+- type: metrics-data-source
+  parameters:
+    scheme: http
+    interval: 1s
+    path: /metrics
+- type: core-metrics-extractor
+- type: endpoint-label-scorer
+  name: prefer-rbln
+  parameters:
+    key: pdd.sota.dev/backend
+    value: rbln
+schedulingProfiles:
+- name: full
+  plugins:
+  - pluginRef: full-capability
+  - pluginRef: prefer-cuda
+    weight: 2
+  - pluginRef: prefer-rbln
+    weight: 1
+  - pluginRef: max-score-picker
+dataLayer:
+  sources:
+  - pluginRef: metrics-data-source
+    extractors:
+    - pluginRef: core-metrics-extractor
