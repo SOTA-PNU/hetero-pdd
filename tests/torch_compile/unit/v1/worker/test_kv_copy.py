@@ -101,3 +101,65 @@ def test_recycled_descending_ids_merge_only_requested_physical_neighbors(monkeyp
     expected[:, blocks] = src[:, blocks]
     assert torch.equal(dst, expected)
     assert stats[0][2:] == (4, 4)  # two runs across K and V
+
+
+def test_import_threads_restore_on_failed_copy_and_skip_device_to_host(monkeypatch):
+    class OpenMP:
+        limit = 2
+        changes = []
+
+        def omp_get_max_threads(self):
+            return self.limit
+
+        def omp_get_thread_limit(self):
+            return 3
+
+        def omp_set_num_threads(self, limit):
+            self.limit = limit
+            self.changes.append(limit)
+
+    omp = OpenMP()
+    monkeypatch.setattr(kv_copy, "_runtime_openmp", lambda: omp)
+    monkeypatch.setattr(kv_copy.os, "sched_getaffinity", lambda _: {0, 1, 2, 3})
+    monkeypatch.setattr(kv_copy.metrics_v2, "EVENTS_ENABLED", True)
+    src = torch.arange(12).reshape(2, 3, 2)
+    dst = torch.full_like(src, -1)
+    kwargs = dict(coalesce=True, reorder=False, import_threads=8)
+    kv_copy.metrics_v2.reset_copy_stats()
+    kv_copy.copy_kv_blocks({"a": src}, {"a": dst}, [1], [1], "h2d", **kwargs)
+    assert torch.equal(dst[:, 1], src[:, 1])
+    assert (dst[:, [0, 2]] == -1).all()
+    assert omp.changes == [3, 2]
+    assert kv_copy.metrics_v2.copy_thread_fields() == {
+        "import_threads_requested": 8,
+        "import_threads_previous": 2,
+        "import_threads_applied": 3,
+    }
+    with pytest.raises(IndexError):
+        kv_copy.copy_kv_blocks({"a": src}, {"a": dst}, [3], [3], "h2d", **kwargs)
+    assert omp.changes == [3, 2, 3, 2]
+    kv_copy.copy_kv_blocks({"a": src}, {"a": dst}, [0], [0], "d2h", **kwargs)
+    assert omp.changes == [3, 2, 3, 2]
+    with kv_copy.import_thread_scope(None) as limits:
+        assert limits == (2, 2)
+    assert omp.changes == [3, 2, 3, 2]
+
+
+def test_unavailable_runtime_still_copies_complete_blocks(monkeypatch):
+    monkeypatch.setattr(kv_copy, "_runtime_openmp", lambda: None)
+    monkeypatch.setattr(kv_copy.metrics_v2, "EVENTS_ENABLED", True)
+    src = torch.arange(20).reshape(2, 5, 2)
+    dst = torch.full_like(src, -1)
+    kv_copy.copy_kv_blocks(
+        {"a": src},
+        {"a": dst},
+        [3, 1],
+        [3, 1],
+        "h2d",
+        coalesce=True,
+        reorder=False,
+        import_threads=8,
+    )
+    assert torch.equal(dst[:, [3, 1]], src[:, [3, 1]])
+    assert (dst[:, [0, 2, 4]] == -1).all()
+    assert kv_copy.metrics_v2.copy_thread_fields()["import_threads_applied"] is None
