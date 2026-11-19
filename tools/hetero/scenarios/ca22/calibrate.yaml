@@ -1,0 +1,13 @@
+experiment: ../../../../experiments/tiktok-import.yaml
+profiles:
+  cuda: ../../../../llmd/epp/profiles/gpu-only.yaml
+  rbln: ../../../../llmd/epp/profiles/npu-only.yaml
+  pdd: ../../../../llmd/epp/profiles/tiktok-fixed-off.yaml
+lengths: [128, 256, 512]
+output_tokens: 32
+warmup: 2
+repeats: 6
+seed: 93214
+engine_modes:
+  original: {coalesce_kv_import: false}
+  coalesced: {coalesce_kv_import: true}
