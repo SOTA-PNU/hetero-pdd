@@ -17,6 +17,9 @@ plugins:
     outputPriorTokens: 32
     maxKvUtilization: 1.0
     preload: false
+    # Measured one-block PDD TTFT is 87 ms. Bound any wait for a preceding
+    # queued split stream to emit its first output before granting host staging.
+    maxPreloadWaitMs: 90
     objective: workConserving
     costs:
       cuda:
