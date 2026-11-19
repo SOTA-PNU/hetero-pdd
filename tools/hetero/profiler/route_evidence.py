@@ -23,6 +23,8 @@ def _log(path, selector, kinds):
     if path.exists():
         with path.open() as stream:
             for line in stream:
+                if not line.endswith("\n"):
+                    continue  # writer can be between writes when auditing a live warmup
                 if not line.startswith("{") or not any(k in line for k in kinds):
                     continue
                 event = json.loads(line)
@@ -196,11 +198,19 @@ def analyze_routes(work: Path) -> dict:
     requests = []
     warmed = set()
     measured_paths = set()
+    profile = work / "profile"
+    measured_sample = next(live_rows(profile / "requests.jsonl"), {})
+    shape = (
+        measured_sample.get("requested_input_tokens"),
+        measured_sample.get("requested_output_tokens"),
+    )
     verification = work / "verification.json"
     if verification.exists():
         verify = json.loads(verification.read_text())
         if verify.get("smoke") == "passed":
             for req in verify["requests"]:
+                if (len(req["prompt_ids"]), len(req["token_ids"])) != shape:
+                    continue
                 target = endpoints[req["target"]]
                 is_pdd = req["path"] == "pdd"
                 if is_pdd and not req.get("worker_import"):
@@ -222,6 +232,12 @@ def analyze_routes(work: Path) -> dict:
         for measured, filename in files
     )
     for measured_row, row in records:
+        if (
+            not measured_row
+            and (row.get("requested_input_tokens"), row.get("requested_output_tokens"))
+            != shape
+        ):
+            continue
         rid = row["request_id"]
         route = _one([r for r in epp[rid] if r["body"] == "hetero_route"])
         pred = _one(

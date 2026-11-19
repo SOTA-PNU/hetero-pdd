@@ -495,6 +495,51 @@ def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
         save(path, result)
 
 
+def _gpu_full_route(work, rid, target):
+    def records(path, key, value):
+        with path.open() as stream:
+            rows = (
+                json.loads(line)
+                for line in stream
+                if line.startswith("{") and line.endswith("\n") and rid in line
+            )
+            return [
+                r for r in rows if r.get("request_id") == rid and r.get(key) == value
+            ]
+
+    deadline = time.monotonic() + 3
+    while True:
+        choices = records(work / "epp.log", "body", "hetero_route")
+        access = records(work / "gateway.log", "event", "gateway_access")
+        if choices and access:
+            break
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"missing EPP decision or completed gateway record for {rid}"
+            )
+        time.sleep(0.05)
+    if (
+        len(choices) != 1
+        or len(access) != 1
+        or target["kind"] != "gpu"
+        or target["backend"] != "cuda"
+        or "full" not in target["roles"]
+        or any(
+            r.get("path") != "full"
+            or r.get("prefill")
+            or r.get("target") != target["id"]
+            for r in (choices[0], access[0])
+        )
+        or access[0].get("http_status") != 200
+        or access[0].get("preload")
+        or access[0].get("destination") != urlsplit(target["url"]).netloc
+    ):
+        raise ValueError(
+            f"missing unique direct CUDA full execution for reference {rid}"
+        )
+    return dict(epp_request_id=choices[0]["epp_request_id"], gateway=access[0])
+
+
 def compare_gpu(work, gpu_work):
     staged = json.loads((work / "overlap-verification.json").read_text())
     original = json.loads((work / "run.json").read_text())
@@ -512,7 +557,9 @@ def compare_gpu(work, gpu_work):
     if (
         gpu["status"] != "ready"
         or gpu["run_id"] == original["run_id"]
-        or any(e["kind"] != "gpu" or e["roles"] != ["full"] for e in gpu["endpoints"])
+        or not any(
+            e["kind"] == "gpu" and "full" in e["roles"] for e in gpu["endpoints"]
+        )
         or any(gpu["model"][key] != original["model"][key] for key in identity)
     ):
         raise ValueError(
@@ -542,7 +589,16 @@ def compare_gpu(work, gpu_work):
     if len(set(weights.values())) != 1:
         raise ValueError("independent reference uses different model weight bytes")
     confirm_listeners(gpu)
+    mixed_pool = any(
+        e["kind"] != "gpu" or e["roles"] != ["full"] for e in gpu["endpoints"]
+    )
+    gpu_targets = {
+        e["id"]: e
+        for e in gpu["endpoints"]
+        if e["kind"] == "gpu" and "full" in e["roles"]
+    }
     report = dict(
+        reference_pool="shared" if mixed_pool else "dedicated_gpu",
         weights_sha256=next(iter(weights.values())),
         overlap_run=original["run_id"],
         reference_run=gpu["run_id"],
@@ -564,6 +620,9 @@ def compare_gpu(work, gpu_work):
             choice.get("finish_reason") != "length"
             or headers.get("x-hetero-path") != "full"
             or headers.get("x-request-id") != rid
+            or headers.get("x-hetero-target") not in gpu_targets
+            or headers.get("x-hetero-prefill")
+            or headers.get("x-kv-remote-request-id")
             or len(choice["token_ids"]) != req["output_tokens"]
         ):
             raise ValueError("invalid independent GPU reference completion")
@@ -571,7 +630,13 @@ def compare_gpu(work, gpu_work):
         first_diff = next(
             (i for i, (x, y) in enumerate(zip(ids, req["token_ids"])) if x != y), None
         )
+        route = (
+            _gpu_full_route(gpu_work, rid, gpu_targets[headers["x-hetero-target"]])
+            if mixed_pool
+            else None
+        )
         report["result_by_request"][key] = dict(
+            reference_route=route,
             client_request_id=rid,
             target=headers["x-hetero-target"],
             token_ids=ids,

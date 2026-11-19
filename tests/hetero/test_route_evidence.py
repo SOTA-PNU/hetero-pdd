@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
+from llmd.overlap import _gpu_full_route
 from tools.hetero.profiler.route_evidence import (
     _overlap,
     _transfer,
@@ -125,6 +126,24 @@ class RouteEvidenceTests(TestCase):
         self.sched[-1]["monotonic_ns"] = 320
         self.rows[0]["remote_block_ids"] = [[]]
         self.assertIsNone(self.proof())
+
+    def test_gpu_reference_requires_cuda_destination_and_full_epp_decision(self):
+        target = dict(self.producer, url="http://127.0.0.1:3", backend="cuda")
+        decision = dict(request_id="b", path="full", target="gpu", prefill=None)
+        self.save_rows(
+            self.work / "epp.log",
+            [dict(decision, body="hetero_route", epp_request_id="e")],
+        )
+        access = dict(
+            decision, event="gateway_access", http_status=200, destination="127.0.0.1:3"
+        )
+        self.save_rows(self.work / "gateway.log", [access])
+        self.assertEqual(_gpu_full_route(self.work, "b", target)["epp_request_id"], "e")
+        self.save_rows(
+            self.work / "gateway.log", [dict(access, destination="127.0.0.1:2")]
+        )
+        with self.assertRaisesRegex(ValueError, "direct CUDA"):
+            _gpu_full_route(self.work, "b", target)
 
     def test_selected_route_alone_does_not_confirm_transfer(self):
         self.proof()
