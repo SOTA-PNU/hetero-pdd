@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 
 from llmd import config, engines
-from tools.hetero.profiler import analysis
+from tools.hetero.profiler import analysis, benchmark_answers
 from tools.hetero.profiler.common import live_rows
 from tools.hetero.profiler.pdd_summary import folded, key_results, metric_table, table
 from tools.hetero.profiler.route_evidence import analyze_routes
@@ -316,6 +316,7 @@ def profile(work: Path) -> dict:
         "workload": workload,
         "metrics": metrics,
         "counts": counts,
+        "burst_seconds": result["makespan_seconds"]["value"],
         "route_evidence": analyze_routes(work),
     }
     benchmark = state.get("experiment", {}).get("benchmark", {})
@@ -362,27 +363,35 @@ def benchmark_runs(experiment, root, cfg, workload, answers, steps):
     return runs
 
 
-def summarize_runs(root: Path, runs: list[dict]) -> dict:
+def summarize_runs(
+    root: Path, runs: list[dict], *, gpu_reference: Path | None = None
+) -> dict:
     """Aggregate independent measured bursts; compare token IDs at each input index."""
     errors = []
     groups = {}
     reference = None
     reference_label = None
+    answers = benchmark_answers.gpu_answer_key(gpu_reference) if gpu_reference else None
+    if answers:
+        reference_label = str(gpu_reference)
     # Prefer a run with a verified GPU full response for every measured request.
-    for run in runs:
-        data = run.get("profile", {})
-        count = data.get("workload", {}).get("requests")
-        actual = data.get("route_evidence", {}).get("executed_paths", {})
-        if count and actual == {"gpu_full": count}:
-            rows = live_rows(Path(run["work"]) / "profile/requests.jsonl")
-            candidate = {r["request_index"]: r["streamed_token_ids"] for r in rows}
-            output_len = data["workload"]["output_tokens"]
-            if set(candidate) == set(range(count)) and all(
-                ids and len(ids) == output_len for ids in candidate.values()
-            ):
-                reference = candidate
-                reference_label = f"repeat {run['repeat']} / {run['arm']} (GPU full)"
-                break
+    if not answers:
+        for run in runs:
+            data = run.get("profile", {})
+            count = data.get("workload", {}).get("requests")
+            actual = data.get("route_evidence", {}).get("executed_paths", {})
+            if count and actual == {"gpu_full": count}:
+                rows = live_rows(Path(run["work"]) / "profile/requests.jsonl")
+                candidate = {r["request_index"]: r["streamed_token_ids"] for r in rows}
+                output_len = data["workload"]["output_tokens"]
+                if set(candidate) == set(range(count)) and all(
+                    ids and len(ids) == output_len for ids in candidate.values()
+                ):
+                    reference = candidate
+                    reference_label = (
+                        f"repeat {run['repeat']} / {run['arm']} (GPU full)"
+                    )
+                    break
     same_input = None
     for run in runs:
         errors_before = len(errors)
@@ -418,7 +427,10 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
                 f"{label}: {counts['failed']} failed, {counts['incomplete']} incomplete"
             )
         route = data["route_evidence"]
-        if name == "candidate" and (allowed := data.get("expected_paths")):
+        allowed = run.get("expected_paths") or (
+            data.get("expected_paths") if name == "candidate" else None
+        )
+        if allowed:
             actual = route["executed_paths"]
             allowed_count = sum(actual.get(path, 0) for path in allowed)
             if allowed_count != cfg["requests"] or any(
@@ -441,13 +453,21 @@ def summarize_runs(root: Path, runs: list[dict]) -> dict:
         if any(r["actual_input_tokens"] != cfg["input_tokens"] for r in rows):
             errors.append(f"{label}: engine received an unexpected prompt length")
         tokens = {r["request_index"]: r["streamed_token_ids"] for r in rows}
-        if set(tokens) != set(range(cfg["requests"])) or any(
-            ids is None or len(ids) != cfg["output_tokens"] for ids in tokens.values()
-        ):
+        complete_tokens = set(tokens) == set(range(cfg["requests"])) and all(
+            ids is not None and len(ids) == cfg["output_tokens"]
+            for ids in tokens.values()
+        )
+        if not complete_tokens:
             errors.append(f"{label}: missing streamed output IDs")
-        elif reference is None:
+        if answers:
+            checked = benchmark_answers.compare(work, answers)
+            run["mismatched_request_indices"] = checked["mismatched_request_indices"]
+            run["gpu_reference_correct"] = checked["correct"]
+            if not checked["correct"]:
+                errors.append(f"{label}: GPU mismatch in profile/gpu_correctness.json")
+        elif complete_tokens and reference is None:
             reference, reference_label = tokens, label
-        else:
+        elif complete_tokens and reference is not None:
             mismatches = [i for i in reference if tokens.get(i) != reference[i]]
             run["mismatched_request_indices"] = mismatches
             if mismatches:
@@ -775,10 +795,21 @@ def main() -> None:
         answers = root / "reference/verification.json" if reference_source else None
         workload = workload_config(cfg)
         if reference_source:
-            run_service(root / "answer-reference.yaml", root, "reference", None, steps)
+            run_service(
+                root / "answer-reference.yaml",
+                root,
+                "reference",
+                None,
+                steps,
+                workload if "benchmark" in cfg else None,
+            )
         if "benchmark" in cfg:
             runs = benchmark_runs(experiment, root, cfg, workload, answers, steps)
-            result = summarize_runs(root, runs)
+            result = summarize_runs(
+                root,
+                runs,
+                gpu_reference=root / "reference" if reference_source else None,
+            )
             if result["errors"]:
                 raise StepError("; ".join(result["errors"]))
             if reference_source is None:

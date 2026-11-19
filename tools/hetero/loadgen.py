@@ -409,6 +409,9 @@ def main(argv=None, *, tokenizer=None) -> None:
         + "\n",
         encoding="utf-8",
     )
+    with (args.run_dir / "prompts.jsonl").open("w") as handle:
+        for index, ids in enumerate(prompts):
+            handle.write(json.dumps({"request_index": index, "prompt_ids": ids}) + "\n")
     metadata = {
         "argv": argv,
         "slots": [slot.__dict__ for slot in slots],

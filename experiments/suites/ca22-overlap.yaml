@@ -1,0 +1,6 @@
+apiVersion: hetero-pdd/service-suite-v1
+experiment: ../tiktok-overlap.yaml
+gpu_reference: ../../llmd/epp/profiles/gpu-only.yaml
+engines: {npu0: {coalesce_kv_import: true}}
+workloads:
+  fixed-pdd: {expected_paths: [pdd]}

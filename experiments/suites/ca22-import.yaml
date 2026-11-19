@@ -1,0 +1,11 @@
+apiVersion: hetero-pdd/service-suite-v1
+experiment: ../tiktok-import.yaml
+gpu_reference: ../../llmd/epp/profiles/gpu-only.yaml
+arms:
+  ordinary:
+    engines: {npu0: {coalesce_kv_import: false}}
+  coalesced:
+    engines: {npu0: {coalesce_kv_import: true}}
+workloads:
+  four-block: {input_tokens: 512, expected_paths: [pdd]}
+  one-block: {input_tokens: 128, expected_paths: [pdd]}
