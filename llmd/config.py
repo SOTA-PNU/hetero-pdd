@@ -135,6 +135,7 @@ ENGINE_KEYS = set(DEFAULT_ENGINE) | {
     "extra_args",
     "compile_options",
     "coalesce_kv_import",
+    "kv_import_threads",
 }
 
 
@@ -524,6 +525,10 @@ def load(path):
             raise ValueError(
                 "coalesce_kv_import requires a boolean on an RBLN consumer"
             )
+        if "kv_import_threads" in params:
+            if ep["backend"] != "rbln" or "decode" not in roles:
+                raise ValueError("kv_import_threads requires an RBLN consumer")
+            integer(params["kv_import_threads"], "kv_import_threads", high=2**31 - 1)
         labels = ep.setdefault("labels", {})
         if not isinstance(labels, dict) or any(
             not isinstance(v, str) or k.startswith("pdd.sota.dev/")

@@ -117,6 +117,21 @@ def record_event(kind: str, **fields) -> None:
 
 def reset_copy_stats() -> None:
     _copy_stats.totals = (0, 0, 0, 0)
+    _copy_stats.threads = {}
+
+
+def record_copy_threads(
+    requested: int | None, previous: int | None, applied: int | None
+) -> None:
+    _copy_stats.threads = dict(
+        import_threads_requested=requested,
+        import_threads_previous=previous,
+        import_threads_applied=applied,
+    )
+
+
+def copy_thread_fields() -> dict[str, int | None]:
+    return getattr(_copy_stats, "threads", {})
 
 
 def add_copy_stats(h2d_ns: int, reorder_ns: int, num_blocks: int, calls: int) -> None:

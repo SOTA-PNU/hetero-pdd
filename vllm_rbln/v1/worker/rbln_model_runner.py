@@ -2673,11 +2673,13 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                 }
                 kv_transfer_group.register_kv_caches(filtered_kv_caches)
 
+            import_threads = os.environ.get("VLLM_RBLN_KV_IMPORT_THREADS")
             kv_transfer_group.set_host_xfer_buffer_ops(
                 partial(
                     copy_kv_blocks,
                     reorder=os.environ.get("VLLM_RBLN_PDD_LAYOUT_REORDER") == "1",
                     coalesce=os.environ.get("VLLM_RBLN_COALESCE_KV_IMPORT") == "1",
+                    import_threads=int(import_threads) if import_threads else None,
                 )
             )
 

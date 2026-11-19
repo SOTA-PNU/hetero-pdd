@@ -14,13 +14,79 @@
 # limitations under the License.
 """Copies of explicitly allocated blocks between the host buffer and RBLN KV."""
 
+import ctypes
+import importlib.util
+import os
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 import torch
 
+from vllm_rbln.logger import init_logger
 from vllm_rbln.v1.worker import metrics_v2
+
+logger = init_logger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _runtime_openmp() -> ctypes.CDLL | None:
+    # Resolve the public OpenMP ABI from the *loaded* RBLN runtime. Other
+    # libraries in the worker can link a different OpenMP implementation.
+    tvm = importlib.util.find_spec("tvm")
+    if tvm is None or tvm.origin is None:
+        return None
+    library_dir = Path(tvm.origin).parent
+    for name in ("librbln.so", "librbln_runtime.so"):
+        try:
+            lib = ctypes.CDLL(str(library_dir / name), mode=os.RTLD_NOLOAD)
+            lib.omp_get_max_threads.argtypes = []
+            lib.omp_get_max_threads.restype = ctypes.c_int
+            lib.omp_get_thread_limit.argtypes = []
+            lib.omp_get_thread_limit.restype = ctypes.c_int
+            lib.omp_set_num_threads.argtypes = [ctypes.c_int]
+            lib.omp_set_num_threads.restype = None
+            return lib
+        except (AttributeError, OSError):
+            continue
+    return None
+
+
+@lru_cache(maxsize=1)
+def _warn_no_openmp() -> None:
+    logger.warning("RBLN OpenMP API unavailable; using the default KV copy threads")
+
+
+@contextmanager
+def import_thread_scope(threads: int | None) -> Iterator[tuple[int | None, int | None]]:
+    """Temporarily size the RBLN runtime's OpenMP team on this calling task."""
+    lib = _runtime_openmp()
+    if lib is None:
+        if threads is not None:
+            _warn_no_openmp()
+        yield None, None
+        return
+    previous = lib.omp_get_max_threads()
+    if threads is None:
+        yield previous, previous
+        return
+    if threads < 1:
+        raise ValueError("kv_import_threads must be positive")
+    applied = min(threads, len(os.sched_getaffinity(0)), lib.omp_get_thread_limit())
+    if applied == previous:
+        yield previous, previous
+        return
+    # OpenMP specifies nthreads-var per generating task. Setting it here
+    # avoids changing PyTorch's process-wide intra-op configuration or the
+    # worker's decode thread settings outside this synchronous import.
+    lib.omp_set_num_threads(applied)
+    try:
+        yield previous, applied
+    finally:
+        lib.omp_set_num_threads(previous)
 
 
 def block_runs(ids: list[int]) -> list[int | slice]:
@@ -37,6 +103,27 @@ def block_runs(ids: list[int]) -> list[int | slice]:
 
 
 def copy_kv_blocks(
+    src_kv_caches: dict[str, torch.Tensor],
+    dst_kv_caches: dict[str, torch.Tensor],
+    src_block_ids: list[int],
+    dst_block_ids: list[int],
+    direction: Literal["h2d", "d2h"],
+    *,
+    reorder: bool,
+    coalesce: bool,
+    import_threads: int | None = None,
+) -> None:
+    args = (src_kv_caches, dst_kv_caches, src_block_ids, dst_block_ids, direction)
+    if direction == "h2d" and (import_threads is not None or metrics_v2.EVENTS_ENABLED):
+        with import_thread_scope(import_threads) as limits:
+            if metrics_v2.EVENTS_ENABLED:
+                metrics_v2.record_copy_threads(import_threads, *limits)
+            _copy_kv_blocks(*args, reorder=reorder, coalesce=coalesce)
+    else:
+        _copy_kv_blocks(*args, reorder=reorder, coalesce=coalesce)
+
+
+def _copy_kv_blocks(
     src_kv_caches: dict[str, torch.Tensor],
     dst_kv_caches: dict[str, torch.Tensor],
     src_block_ids: list[int],

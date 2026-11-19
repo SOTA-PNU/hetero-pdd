@@ -331,6 +331,7 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
             if metrics_v2.EVENTS_ENABLED and start_ns is not None:
                 try:
                     end_ns = time.monotonic_ns()
+                    thread_fields = metrics_v2.copy_thread_fields()
                     h2d_ns, reorder_ns, num_blocks, calls = metrics_v2.take_copy_stats()
                     metrics_v2.record_event(
                         "kv_h2d",
@@ -341,6 +342,8 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
                         h2d_ns=h2d_ns,
                         reorder_ns=reorder_ns,
                         copy_calls=calls,
+                        physical_block_ids=meta.local_physical_block_ids,
+                        **thread_fields,
                         num_blocks=num_blocks,
                         bytes_est=num_blocks * self._metrics_block_bytes,
                     )
@@ -396,6 +399,19 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
 
             nixl_rbln.ensure_rbln_backend(self.nixl_wrapper, device_id=0)
         super().register_kv_caches(kv_caches)
+        if metrics_v2.EVENTS_ENABLED and self.host_xfer_buffers:
+            buffers = list(self.host_xfer_buffers.values())
+            metrics_v2.record_event(
+                "kv_host_buffer_registered",
+                allocator="rebel.kv_cache.aligned_tensor",
+                nixl_memory_type="DRAM",
+                pools=len(buffers),
+                allocated_bytes=sum(buffer.nbytes for buffer in buffers),
+                all_page_aligned=all(
+                    buffer.data_ptr() % 4096 == 0 for buffer in buffers
+                ),
+                all_torch_pinned=all(buffer.is_pinned() for buffer in buffers),
+            )
 
     def finalize_kv_cache_registration(self) -> None:
         """Run the deferred D2D registration. No-op on host-bounce and
