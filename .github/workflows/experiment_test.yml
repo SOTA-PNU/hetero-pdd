@@ -143,7 +143,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: experiment-profile-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/experiment-results/${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/experiment-results/${{ strategy.job-index }}
+            !${{ runner.temp }}/experiment-results/${{ strategy.job-index }}/**/offload/**
           if-no-files-found: ignore
 
       - name: Remove experiment container
