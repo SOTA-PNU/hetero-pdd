@@ -124,6 +124,8 @@ def _transfer(row, ep, producer, events, native):
         "host_ready_ns": end,
         "import_start_ns": copied["start_ns"],
         "import_end_ns": copied["end_ns"],
+        "copy_calls": copied.get("copy_calls"),
+        "host_copy_calls_ms": copied["h2d_ns"] / 1e6 if "h2d_ns" in copied else None,
         "first_decode_ns": first_decode,
         "receive_ms": (end - begin) / 1e6,
         "import_ms": (copied["end_ns"] - copied["start_ns"]) / 1e6,
