@@ -35,9 +35,11 @@ def read_config(path):
         "official_mib",
         "conditions",
     }
-    fields(cfg, keys | {"capture_physical_layout"}, keys, "microbenchmark")
-    if type(cfg.get("capture_physical_layout", False)) is not bool:
-        raise ValueError("capture_physical_layout must be boolean")
+    options = {"capture_physical_layout", "use_worker_cpu_setup"}
+    fields(cfg, keys | options, keys, "microbenchmark")
+    for option in options:
+        if type(cfg.get(option, False)) is not bool:
+            raise ValueError(f"{option} must be boolean")
     integer(cfg["physical_npu"], "physical_npu", low=0)
     for key in ["layers", "warmup", "samples"]:
         integer(cfg[key], key)
@@ -347,6 +349,30 @@ def physical_layout(tensor):
         return json.loads(raw)
 
 
+def configure_host(use_worker):
+    if not use_worker:
+        torch.set_num_threads(1)
+        torch.set_num_interop_threads(1)
+        return None
+
+    import numba
+    from vllm.config import ParallelConfig
+
+    from vllm_rbln.v1.worker.utils import (
+        get_rbln_planned_affinity_cpu_count,
+        set_omp_num_threads,
+    )
+
+    # Match the TP1/DP1 engine worker's ordering. Its NUMA split determines
+    # intra-op threads before compilation, then it binds after warmup.
+    parallel = ParallelConfig(tensor_parallel_size=1, data_parallel_size=1)
+    cpus = get_rbln_planned_affinity_cpu_count(0, 0, parallel)
+    set_omp_num_threads(0, 0, max(2, cpus // 2))
+    numba.set_num_threads(torch.get_num_threads())
+    torch.set_num_threads(numba.get_num_threads())
+    return parallel
+
+
 def run(cfg, out):
     device_num = cfg["physical_npu"]
     if (
@@ -369,6 +395,17 @@ def run(cfg, out):
         torch_sync_source=inspect.getsource(torch.rbln.synchronize),
         aligned_source=inspect.getsource(aligned_tensor),
         host_nixl_registration=False,
+        initial_torch_threads=torch.get_num_threads(),
+        initial_thread_env={
+            k: os.environ.get(k)
+            for k in (
+                "OMP_NUM_THREADS",
+                "OMP_PLACES",
+                "OMP_PROC_BIND",
+                "RBLN_NUM_THREADS",
+                "VLLM_RBLN_NUMA",
+            )
+        },
     )
     save(out / "vendor.json", vendor_test(cfg, out))
     device = torch.device("rbln:0")
@@ -376,8 +413,7 @@ def run(cfg, out):
     def sync():
         torch.rbln.synchronize(device)
 
-    torch.set_num_threads(1)
-    torch.set_num_interop_threads(1)
+    parallel = configure_host(cfg.get("use_worker_cpu_setup", False))
     materialize = torch.compile(lambda x: x + 1, backend="rbln", dynamic=False)
     kv = allocate(tuple(cfg["layer_shape"]), cfg["layers"], device, materialize)
     flat = {
@@ -385,6 +421,18 @@ def run(cfg, out):
         for m in {c["mib"] for c in cfg["conditions"].values() if c["layout"] == "flat"}
     }
     sync()
+    if parallel:
+        from vllm_rbln.v1.worker.utils import set_cpu_affinity
+
+        set_cpu_affinity(0, 0, parallel)
+    with import_thread_scope(None) as (inherited, _):
+        inventory.update(
+            measured_cpu_affinity=sorted(os.sched_getaffinity(0)),
+            measured_torch_threads=torch.get_num_threads(),
+            measured_torch_interop_threads=torch.get_num_interop_threads(),
+            inherited_rbln_omp_limit=inherited,
+            measured_rbln_num_threads_env=os.environ.get("RBLN_NUM_THREADS"),
+        )
     actual = torch.rbln.memory_allocated(device)
     needed = sum(t.nbytes for t in kv[1]) + sum(
         t.nbytes for f in flat.values() for t in f[1]

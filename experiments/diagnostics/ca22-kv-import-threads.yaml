@@ -7,11 +7,20 @@ warmup: 5
 samples: 30
 official_mib: []
 capture_physical_layout: true
+use_worker_cpu_setup: true
 conditions:
   B1: {layout: kv, ids: [5], max_run: 1}
+  B1_t1: {layout: kv, ids: [5], max_run: 1, kv_import_threads: 1}
+  B1_t4: {layout: kv, ids: [5], max_run: 1, kv_import_threads: 4}
   B1_t8: {layout: kv, ids: [5], max_run: 1, kv_import_threads: 8}
+  B1_t12: {layout: kv, ids: [5], max_run: 1, kv_import_threads: 12}
+  B1_t16: {layout: kv, ids: [5], max_run: 1, kv_import_threads: 16}
   A3: {layout: kv, ids: [5, 6, 7, 8], max_run: 4}
+  A3_t1: {layout: kv, ids: [5, 6, 7, 8], max_run: 4, kv_import_threads: 1}
+  A3_t4: {layout: kv, ids: [5, 6, 7, 8], max_run: 4, kv_import_threads: 4}
   A3_t8: {layout: kv, ids: [5, 6, 7, 8], max_run: 4, kv_import_threads: 8}
+  A3_t12: {layout: kv, ids: [5, 6, 7, 8], max_run: 4, kv_import_threads: 12}
+  A3_t16: {layout: kv, ids: [5, 6, 7, 8], max_run: 4, kv_import_threads: 16}
   fragmented: {layout: kv, ids: [2, 20, 29, 31], max_run: 4}
   fragmented_t8: {layout: kv, ids: [2, 20, 29, 31], max_run: 4, kv_import_threads: 8}
   flat56: {layout: flat, mib: 56, calls: 1}
