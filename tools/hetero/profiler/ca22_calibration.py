@@ -29,6 +29,7 @@ from llmd import config
 from llmd.runtime import fetch
 from llmd.verify import PromptTokenizer
 from tools.hetero import loadgen
+from tools.hetero.profiler.route_evidence import require_canonical_copy
 
 
 def histogram(url):
@@ -152,7 +153,10 @@ def collect(folder, state, route, rows):
         if route == "pdd":
             (ev,) = [v for k, v in by_id.items() if k.startswith(f"cmpl-{rid}-")]
             imp = ev["kv_h2d"]
+            if target.get("engine", {}).get("canonicalize_kv_import"):
+                require_canonical_copy(imp, imp["bytes_est"], rid)
             rec.update(
+                **{k: v for k, v in imp.items() if k.startswith("canonical_")},
                 receive_ms=(
                     ev["kv_xfer_done"]["monotonic_ns"]
                     - ev["kv_xfer_start"]["monotonic_ns"]

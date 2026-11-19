@@ -13,6 +13,19 @@ from tools.hetero.profiler.common import live_rows, union
 from tools.hetero.profiler.expected import engine_request_base, server_request_id
 
 
+def require_canonical_copy(transfer, expected_bytes, request_id):
+    """Ensure an enabled test arm actually took the optimized path for every byte."""
+    if not (
+        transfer.get("canonical_requested") is True
+        and expected_bytes > 0
+        and transfer.get("canonical_bytes") == expected_bytes
+        and transfer.get("copy_calls", 0) > 0
+        and transfer.get("canonical_copy_calls") == transfer["copy_calls"]
+        and transfer.get("canonical_fallback_calls") == 0
+    ):
+        raise ValueError(f"{request_id}: incomplete canonical KV copy: {transfer}")
+
+
 def _one(records):
     return records[0] if len(records) == 1 else {}
 
@@ -126,6 +139,7 @@ def _transfer(row, ep, producer, events, native):
         "import_end_ns": copied["end_ns"],
         "copy_calls": copied.get("copy_calls"),
         "host_copy_calls_ms": copied["h2d_ns"] / 1e6 if "h2d_ns" in copied else None,
+        **{k: v for k, v in copied.items() if k.startswith("canonical_")},
         "first_decode_ns": first_decode,
         "receive_ms": (end - begin) / 1e6,
         "import_ms": (copied["end_ns"] - copied["start_ns"]) / 1e6,

@@ -23,6 +23,7 @@ from tools.hetero import loadgen
 from tools.hetero.profiler import benchmark_answers
 from tools.hetero.profiler import experiment_ci as ci
 from tools.hetero.profiler.resident import gateway
+from tools.hetero.profiler.route_evidence import require_canonical_copy
 
 WORKLOAD_KEYS = {
     "input_tokens",
@@ -138,11 +139,18 @@ def measure(live, cfg, work, label, tokenizer):
         )
     data = ci.profile(work)
     routes = json.loads((work / "profile/route_evidence.json").read_text())["requests"]
+    canonical_endpoints = {
+        ep["id"]
+        for ep in cfg["endpoints"]
+        if ep["engine"].get("canonicalize_kv_import")
+    }
     groups = defaultdict(list)
     for request in routes:
         transfer = request.get("transfer")
         if transfer is None:
             continue
+        if request["target"] in canonical_endpoints:
+            require_canonical_copy(transfer, transfer["bytes"], request["request_id"])
         runs = 0
         for block_group in transfer["local_block_ids"]:
             blocks = sorted(block_group)

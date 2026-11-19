@@ -9,9 +9,31 @@ import yaml
 
 from llmd import config
 from tools.hetero.profiler.ca22_costs import line, write_profiles
+from tools.hetero.profiler.route_evidence import require_canonical_copy
 
 
 class CostCalibrationTests(TestCase):
+    def test_optimized_trial_requires_every_byte_and_call_to_take_selected_path(self):
+        event = dict(
+            canonical_requested=True,
+            canonical_copy_calls=56,
+            canonical_bytes=14 << 20,
+            canonical_fallback_calls=0,
+            copy_calls=56,
+        )
+        require_canonical_copy(event, 14 << 20, "req-ok")
+        for change in (
+            {"canonical_requested": False},
+            {"canonical_copy_calls": 55},
+            {"canonical_bytes": 0},
+            {"canonical_fallback_calls": 1},
+        ):
+            with (
+                self.subTest(change=change),
+                self.assertRaisesRegex(ValueError, "req-1"),
+            ):
+                require_canonical_copy({**event, **change}, 14 << 20, "req-1")
+
     def test_nonnegative_fit(self):
         self.assertEqual(line([1, 2, 4], [5, 5, 5]), (5, 0))
         intercept, slope = line([1, 2, 4], [1, 4, 10])
