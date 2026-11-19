@@ -265,15 +265,15 @@ candidate에서 실제 겹침 증거가 있는 17건의 READ 중앙값은 27.99 
 
 ### 128 입력·128 출력의 PDD 손익분기
 
-프리필 GPU 대기는 Wg, 디코더 NPU 대기는 Wn으로 두었다. 측정으로 고정한 프로필에서 Pg=10.96, Pn=13.57, full 고정비 Fg=6.32, Fn=6.98, PDD dispatch D=22.61, receive R=29.18, import I=18.03 ms다. 요청의 평균 컨텍스트에서 GPU/NPU decode 1회는 g=1.374, n=9.795 ms다. 대기가 없을 때 GPU full/NPU full/PDD의 예상 TTFT는 17.28/20.55/90.58 ms, 완료시간은 191.82/1264.45/1334.49 ms다.
+프리필 GPU 대기는 Wg, 디코더 NPU 대기는 Wn으로 두었다. 측정으로 고정한 프로필에서 GPU prefill=10.96, NPU prefill=13.57, full 고정비 Fg=6.32, Fn=6.98, PDD dispatch D=22.61, receive R=29.18, import I=18.03 ms다. 요청의 평균 컨텍스트에서 GPU/NPU decode 1회는 g=1.374, n=9.795 ms다. 대기가 없을 때 GPU full/NPU full/PDD의 예상 TTFT는 17.28/20.55/90.58 ms, 완료시간은 191.82/1264.45/1334.49 ms다.
 
-U = Wg + Pg + D로 놓으면 일반 PDD의 완료시간은 max(U, Wn) + R + I + O·n, lookahead 승인이 있을 때는 max(U + R, Wn) + I + O·n이다. GPU full은 Wg + Pg + Fg + (O−1)·g, NPU full은 Wn + Pn + Fn + (O−1)·n이다. 이 식은 같은 재평가 시점의 경로 비용을 비교한다. EPP가 첫 출력 신호를 기다린 시간은 그 시점의 후보들에 공통으로 붙는다.
+U = Wg + GPU prefill + D로 놓으면 일반 PDD의 완료시간은 max(U, Wn) + R + I + O·n, lookahead 승인이 있을 때는 max(U + R, Wn) + I + O·n이다. GPU full은 Wg + GPU prefill + Fg + (O−1)·g, NPU full은 Wn + NPU prefill + Fn + (O−1)·n이다. 이 식은 같은 재평가 시점의 경로 비용을 비교한다. EPP가 첫 출력 신호를 기다린 시간은 그 시점의 후보들에 공통으로 붙는다.
 
-NPU full과 비교할 때 NPU를 확보한 뒤 첫 decode 전까지 허용되는 추가 비용은 Pn + Fn − n = 10.75 ms다. 일반 PDD는 max(U − Wn, 0) + R + I, 승인된 lookahead는 max(U + R − Wn, 0) + I를 여기에 비교한다. 일반 PDD는 producer 대기를 모두 숨겨도 R + I가 47.21 ms로, 허용치와의 차이는 +36.46 ms다. 완전한 수신 겹침에는 이전 decode, host 여유, Wn − Wg ≥ 62.76 ms가 필요하다. 이때 import만 남겨도 허용치와 +7.28 ms 차이다.
+NPU full과 비교할 때 NPU를 확보한 뒤 첫 decode 전까지 허용되는 추가 비용은 NPU prefill + Fn − n = 10.75 ms다. 일반 PDD는 max(U − Wn, 0) + R + I, 승인된 lookahead는 max(U + R − Wn, 0) + I를 여기에 비교한다. 일반 PDD는 producer 대기를 모두 숨겨도 R + I가 47.21 ms로, 허용치와의 차이는 +36.46 ms다. 완전한 수신 겹침에는 이전 decode, host 여유, Wn − Wg ≥ 62.76 ms가 필요하다. 이때 import만 남겨도 허용치와 +7.28 ms 차이다.
 
 수신을 완전히 숨긴 경우에도 다른 모델 계수를 고정하면, import를 10.75 ms 미만으로 낮춰야 NPU full보다 먼저 끝난다. 현재 import에서 필요한 감소량은 7.28 ms보다 크다.
 
-같은 GPU가 producer인 경우 GPU full과 PDD의 Wg가 상쇄된다. 디코더가 언제 비더라도 PDD 완료시간의 하한은 Wg + Pg + D + R + I + O·n이다. 현재 비용으로 GPU full과 같아지려면 NPU decode가 0.867 ms/토큰 이하가 되어야 한다. D, R, I를 모두 0으로 두어도 상한은 1.413 ms/토큰이다. 이 조건은 한 요청의 완료시간을 비교한다. 네이티브 workConserving은 활성 예약이 있을 때 비어 있는 주 장치를 우선하므로, full 경로 분산으로 burst 처리량이 오를 수 있다.
+같은 GPU가 producer인 경우 GPU full과 PDD의 Wg가 상쇄된다. 디코더가 언제 비더라도 PDD 완료시간의 하한은 Wg + GPU prefill + D + R + I + O·n이다. 현재 비용으로 GPU full과 같아지려면 NPU decode가 0.867 ms/토큰 이하가 되어야 한다. D, R, I를 모두 0으로 두어도 상한은 1.413 ms/토큰이다. 이 조건은 한 요청의 완료시간을 비교한다. 네이티브 workConserving은 활성 예약이 있을 때 비어 있는 주 장치를 우선하므로, full 경로 분산으로 burst 처리량이 오를 수 있다.
 
 측정 C4 요청에 연결된 EPP 선택 경로에서 추정한 주 장치 대기시간이다. EPP는 선택된 경로의 비용만 기록한다. 각 행의 입력·출력 길이와 frozen 프로필로 다시 계산한 TTFT 및 완료시간이 EPP 기록과 0.000001 ms 안에서 일치했다.
 
