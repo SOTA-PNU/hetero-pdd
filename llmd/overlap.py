@@ -9,6 +9,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 from urllib.parse import urlsplit
 
 from tools.hetero.loadgen import make_prompt
@@ -93,7 +94,11 @@ def _proof(work, decoder, first, following):
     proc = ready.get("last_proc_ns")
     joined = []
     for event in rows:
-        if event.get("kind") != "step" or event.get("phase") != "decode":
+        if (
+            event.get("kind") != "step"
+            or event.get("phase") != "decode"
+            or not event.get("sampled")
+        ):
             continue
         lo, hi = event["span_start_ns"], event["span_end_ns"]
         if max(lo, start) >= min(hi, end):
@@ -243,7 +248,9 @@ def _cancel_held_request(endpoint, scheduler_path, body):
     )
 
 
-def run(work, cancel=False):
+def run(work, cancel=False, ordinary=False, arrival_offset_s=2.0):
+    if not 0 < arrival_offset_s < 180:
+        raise ValueError("arrival offset must be between zero and the request timeout")
     state = json.loads((work / "run.json").read_text())
     if state["status"] != "ready":
         raise ValueError("ready TikTok run required")
@@ -266,8 +273,12 @@ def run(work, cancel=False):
         "status": "running",
     }
     path = work / (
-        "cancel-verification.json" if cancel else "overlap-verification.json"
+        "ordinary-verification.json" if ordinary else "overlap-verification.json"
     )
+    if cancel:
+        path = work / "cancel-verification.json"
+    anchor_sent = Event()
+    anchor_start = []
 
     def payload(n, output, index):
         return dict(
@@ -281,15 +292,20 @@ def run(work, cancel=False):
             stream=False,
         )
 
-    def completion(n, output, index):
+    def completion(n, output, index, anchor=False):
         rid = str(uuid.uuid4())
         body = payload(n, output, index)
+        sent = time.monotonic()
+        if anchor:
+            anchor_start.append(sent)
+            anchor_sent.set()
         data, headers = fetch(
             state["endpoint"],
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json", "X-Request-Id": rid},
             timeout=180,
         )
+        completed = time.monotonic()
         reply = json.loads(data)
         if (
             reply["choices"][0].get("finish_reason") != "length"
@@ -305,6 +321,8 @@ def run(work, cancel=False):
             )
         return dict(
             client_request_id=rid,
+            sent_monotonic=sent,
+            completed_monotonic=completed,
             payload=body,
             completion_id=reply["id"],
             input_tokens=n,
@@ -318,26 +336,15 @@ def run(work, cancel=False):
     save(path, result)
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
-            first = pool.submit(completion, 128, 896, 0)
-            deadline = time.monotonic() + 90
-            while time.monotonic() < deadline and not first.done():
-                text, _ = fetch(decoder["metrics"])
-                running = [
-                    float(row.split()[-1])
-                    for row in text.decode().splitlines()
-                    if row.startswith("hetero_pdd_running_requests ")
-                ]
-                if any(v > 0 for v in running):
-                    break
-                time.sleep(0.1)
-            else:
-                if first.done():
-                    first.result()
-                raise RuntimeError(
-                    "missing running metric before decode completion or timeout"
-                )
-            # The native example data source scrapes each second.
-            time.sleep(1.15)
+            first = pool.submit(completion, 128, 896, 0, True)
+            if not anchor_sent.wait(20):
+                raise RuntimeError("anchor did not start")
+            # Both arms release the same prompt pair at the same client offset.
+            # Sampling the decoder or scraping EPP in this loop perturbs arrival.
+            time.sleep(max(0.0, anchor_start[0] + arrival_offset_s - time.monotonic()))
+            if first.done():
+                first.result()
+                raise RuntimeError("anchor completed before the second arrival")
             if cancel:
                 result["cancellation"] = _cancel_held_request(
                     state["endpoint"],
@@ -351,6 +358,46 @@ def run(work, cancel=False):
                 return
             following = completion(64, 32, 1)
             result.update(first=first.result(), following=following)
+        a, b = result["first"], result["following"]
+        result["pair_timing"] = dict(
+            requested_arrival_offset_ms=1000 * arrival_offset_s,
+            actual_arrival_offset_ms=1000 * (b["sent_monotonic"] - a["sent_monotonic"]),
+            anchor_service_ms=1000 * (a["completed_monotonic"] - a["sent_monotonic"]),
+            following_service_ms=1000
+            * (b["completed_monotonic"] - b["sent_monotonic"]),
+            makespan_ms=1000
+            * (
+                max(a["completed_monotonic"], b["completed_monotonic"])
+                - a["sent_monotonic"]
+            ),
+        )
+        if ordinary:
+            # Import metrics may be buffered until the worker's next event.
+            # A post-pair unmeasured request also exercises slot reuse.
+            result["recovery"] = completion(128, 32, 2)
+            events = _rows(sorted(Path(decoder["events_dir"]).glob("events_*.jsonl")))
+            sched = _rows([work / f"{decoder['id']}-admission.jsonl"])
+            for req in (a, b):
+                ids = [
+                    e["req_id"]
+                    for e in events
+                    if e["kind"] == "kv_xfer_start"
+                    and e["remote_request_id"] == req["remote_request_id"]
+                ]
+                if len(ids) != 1 or any(
+                    e["event"] == "PREPARE_ALLOCATED_RECV_QUEUED"
+                    and e["request_id"] in ids
+                    for e in sched
+                ):
+                    raise ValueError(
+                        "ordinary control lacks a unique non-preloaded KV read"
+                    )
+                if not any(
+                    e["kind"] == "kv_h2d" and e["req_id"] == ids[0] for e in events
+                ):
+                    raise ValueError("ordinary control lacks a completed KV import")
+            result["status"] = "passed"
+            return
         # Also verify identical inputs on the ordinary PD route after both
         # credits return and the native data source samples the idle decoder.
         time.sleep(1.2)
@@ -481,9 +528,20 @@ if __name__ == "__main__":
     parser.add_argument("--work-dir", required=True, type=Path)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--cancel", action="store_true")
+    mode.add_argument(
+        "--ordinary",
+        action="store_true",
+        help="measure the matched preload-off PDD control",
+    )
+    parser.add_argument("--arrival-offset-s", type=float, default=2.0)
     mode.add_argument("--gpu-reference-run", type=Path)
     args = parser.parse_args()
     if args.gpu_reference_run:
         compare_gpu(args.work_dir.resolve(), args.gpu_reference_run.resolve())
     else:
-        run(args.work_dir.resolve(), cancel=args.cancel)
+        run(
+            args.work_dir.resolve(),
+            cancel=args.cancel,
+            ordinary=args.ordinary,
+            arrival_offset_s=args.arrival_offset_s,
+        )
