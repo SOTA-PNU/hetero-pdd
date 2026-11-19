@@ -115,22 +115,25 @@ class ServiceTests(unittest.TestCase):
             patch.object(suite, "PromptTokenizer"),
             patch.object(answers, "gpu_answer_key"),
             patch.object(
-                ci, "summarize_runs", return_value={"errors": []}
+                ci, "summarize_runs", return_value={"errors": [], "runs": []}
             ) as aggregate,
             patch.object(ci, "benchmark_lines", return_value=[]),
         ):
             self.assertEqual(suite.execute_suite(spec, Path(tmp)), [])
-            self.assertEqual(len(starts), 4)
+            self.assertEqual(len(starts), 7)
             self.assertEqual([r[1] for r in measurements[:2]], ["gpu-reference"] * 2)
             self.assertEqual(
                 [r[1] for r in measurements[2::2]],
                 [
                     "ordinary",
                     "coalesced",
-                    "coalesced",
+                    "threaded",
+                    "threaded",
                     "ordinary",
-                    "ordinary",
                     "coalesced",
+                    "coalesced",
+                    "threaded",
+                    "ordinary",
                 ],
             )
             self.assertEqual({r[2] for r in measurements}, {128, 512})

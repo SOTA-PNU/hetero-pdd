@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import signal
 import statistics
 import sys
@@ -163,8 +164,67 @@ def measure(live, cfg, work, label, tokenizer):
     return data
 
 
+def service_lines(runs):
+    return [
+        "",
+        "## Service measurements",
+        "",
+        "Each burst excludes GPU reference generation, verification and warmup.",
+        "",
+        *ci.table(
+            (
+                "Repeat",
+                "Arm",
+                "Burst seconds",
+                "GPU output agreement",
+                "Valid comparison",
+            ),
+            [
+                (
+                    r["repeat"],
+                    r["arm"],
+                    f"{r['profile']['burst_seconds']:.3f}",
+                    r["gpu_reference_correct"],
+                    r["comparison_valid"],
+                )
+                for r in runs
+            ],
+        ),
+        "",
+        "Transfer medians by contiguous block runs and actual copy calls.",
+        "",
+        *ci.table(
+            (
+                "Repeat",
+                "Arm",
+                "Runs",
+                "Calls",
+                "Requests",
+                "MiB",
+                "Receive ms",
+                "Import envelope ms",
+            ),
+            [
+                (
+                    r["repeat"],
+                    r["arm"],
+                    g["contiguous_runs"],
+                    g["copy_calls"],
+                    g["requests"],
+                    f"{g['median_bytes'] / (1024**2):.2f}",
+                    f"{g['median_receive_ms']:.2f}",
+                    f"{g['median_import_envelope_ms']:.2f}",
+                )
+                for r in runs
+                for g in r["profile"]["transfers_by_physical_runs_and_calls"]
+            ],
+        ),
+    ]
+
+
 def execute_suite(path, root, resident=None):
     cells = materialize(path, root / "config")
+    shutil.copyfile(path, root / "suite.yaml")
     runs = {cell: [] for cell in cells}
     arms = [k for k in next(iter(cells.values())) if k != "gpu-reference"]
     signature = None
@@ -208,7 +268,7 @@ def execute_suite(path, root, resident=None):
         }
         for i in range(max(repeats.values())):
             for j in range(len(arms)):
-                arm = arms[(i + j) % len(arms)]
+                arm = arms[(j - i) % len(arms)]
                 for cell, configs in cells.items():
                     if i >= repeats[cell]:
                         continue
@@ -228,7 +288,8 @@ def execute_suite(path, root, resident=None):
     for cell, rows in runs.items():
         folder = root / cell
         result = ci.summarize_runs(folder, rows, gpu_reference=folder / "gpu-reference")
-        (folder / "summary.md").write_text("\n".join(ci.benchmark_lines(result)) + "\n")
+        lines = ci.benchmark_lines(result) + service_lines(result["runs"])
+        (folder / "summary.md").write_text("\n".join(lines) + "\n")
         errors.extend(f"{cell}: {s}" for s in result["errors"])
     return errors
 
