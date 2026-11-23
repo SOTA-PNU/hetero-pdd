@@ -8,12 +8,21 @@ on:
     paths:
       - 'experiments/*.yaml'
       - 'experiments/*.yml'
+      - 'llmd/epp/plugins/*.go'
+      - 'llmd/epp/profiles/tiktok.yaml'
+      - 'llmd/epp/profiles/selective.yaml'
   workflow_dispatch:
     inputs:
       experiment:
         description: Algorithm YAML filename in experiments/ (e.g. fixed-pdd.yaml)
         required: true
         type: string
+      stage:
+        description: Configured comparison, fixed PDD verification, or PDD-only TikTok overlap
+        required: false
+        type: choice
+        default: configured
+        options: [configured, pdd, overlap]
 
 concurrency:
   group: pdd-test
@@ -58,6 +67,10 @@ jobs:
             files=$(git diff --name-only --diff-filter=ACMR -z "$base" "$GITHUB_SHA" -- \
               ':(glob)experiments/*.yaml' ':(glob)experiments/*.yml' |
               jq -Rsc 'split("\u0000") | map(select(length > 0))')
+            if ! git diff --quiet "$base" "$GITHUB_SHA" -- \
+              llmd/epp/plugins/ llmd/epp/profiles/{tiktok,selective}.yaml; then
+              files=$(jq -c '. + ["experiments/tiktok-2npu.yaml"] | unique' <<< "$files")
+            fi
           fi
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "Selected experiments: $files"
@@ -87,6 +100,7 @@ jobs:
         experiment: ${{ fromJSON(needs.prepare.outputs.files) }}
     runs-on: self-hosted
     env:
+      STAGE: ${{ inputs.stage || (matrix.experiment == 'experiments/tiktok-2npu.yaml' && 'smoke') || 'configured' }}
       EXPERIMENT: ${{ matrix.experiment }}
       EXPERIMENT_CONTAINER: experiment-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
     steps:
@@ -111,7 +125,7 @@ jobs:
       - name: Start experiment container
         run: |
           model_cache="$HOME/.cache/huggingface"
-          result_root="$RUNNER_TEMP/experiment-results/${{ strategy.job-index }}"
+          result_root="$RUNNER_TEMP/experiment-results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/${{ strategy.job-index }}"
           mkdir -p -- "$model_cache" "$result_root"
           docker run --rm --init -d \
             --name "$EXPERIMENT_CONTAINER" \
@@ -134,9 +148,9 @@ jobs:
       - name: Test experiment
         run: |
           docker exec \
-            -e EXPERIMENT="$EXPERIMENT" \
+            -e EXPERIMENT="$EXPERIMENT" -e STAGE="$STAGE" -e GITHUB_SHA="$GITHUB_SHA" \
             "$EXPERIMENT_CONTAINER" bash -lc \
-            '"$CUDA_PY" -m tools.hetero.profiler.experiment_ci "$EXPERIMENT" --result-dir /tmp/pdd-home/results'
+            '"$CUDA_PY" -m tools.hetero.profiler.experiment_ci "$EXPERIMENT" --stage "$STAGE" --result-dir /tmp/pdd-home/results'
 
       - name: Upload experiment profiles
         if: ${{ always() }}
@@ -144,8 +158,8 @@ jobs:
         with:
           name: experiment-profile-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/experiment-results/${{ strategy.job-index }}
-            !${{ runner.temp }}/experiment-results/${{ strategy.job-index }}/**/offload/**
+            ${{ runner.temp }}/experiment-results/${{ github.run_id }}-${{ github.run_attempt }}/${{ strategy.job-index }}
+            !${{ runner.temp }}/experiment-results/${{ github.run_id }}-${{ github.run_attempt }}/${{ strategy.job-index }}/**/offload/**
           if-no-files-found: ignore
 
       - name: Remove experiment container
@@ -170,15 +184,16 @@ jobs:
         continue-on-error: true
         with:
           name: experiment-profile-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: experiment-result
+          path: ${{ runner.temp }}/experiment-summary/${{ github.run_id }}-${{ github.run_attempt }}/${{ strategy.job-index }}
 
       - name: Summarize experiment
         env:
           EXPERIMENT: ${{ matrix.experiment }}
+          SUMMARY: ${{ runner.temp }}/experiment-summary/${{ github.run_id }}-${{ github.run_attempt }}/${{ strategy.job-index }}/summary.md
         run: |
           set -euo pipefail
-          if [[ -f experiment-result/summary.md ]]; then
-            cat experiment-result/summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$SUMMARY" ]]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## $EXPERIMENT: no completed result" >> "$GITHUB_STEP_SUMMARY"
             exit 1
