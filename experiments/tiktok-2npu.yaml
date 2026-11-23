@@ -1,0 +1,20 @@
+apiVersion: hetero-pdd/v2
+model: models/qwen3-0.6b.yaml
+profile: ../llmd/epp/profiles/tiktok.yaml
+endpoints:
+  - {id: gpu0, backend: cuda, roles: [prefill, full], devices: [0], port: 18001, kv_port: 18101}
+  - {id: npu0, backend: rbln, roles: [decode, full], devices: [0], port: 18002, kv_port: 18102, sidecar_port: 18202, sidecar_metrics_port: 18302, engine: &decode {lookahead: {active_decode_limit: 1, lookahead_depth: 1, prefetch_byte_budget: 134217728}}}
+  - {id: npu1, backend: rbln, roles: [decode, full], devices: [1], port: 18003, kv_port: 18103, sidecar_port: 18203, sidecar_metrics_port: 18303, engine: *decode}
+instrumentation: {rbln_events: true}
+verify: {input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
+benchmark:
+  input_tokens: 128
+  output_tokens: 256
+  concurrency: 8
+  requests: 64
+  repeats: 3
+  comparisons:
+    baseline-hetero: ../llmd/epp/profiles/baseline.yaml
+    gpu-only: ../llmd/epp/profiles/gpu-only.yaml
+    fixed-pdd: ../llmd/epp/profiles/fixed-pdd.yaml
+    selective: ../llmd/epp/profiles/selective.yaml

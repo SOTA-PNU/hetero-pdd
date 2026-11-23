@@ -219,11 +219,14 @@ func TestColdWorkerUsesMeasuredRBLNGauges(t *testing.T) {
 		t.Fatal(l, e.GetMetrics())
 	}
 	f[queueMetric] = family(0)
+	if l := read(); l.Queue != 2 {
+		t.Fatalf("scheduler transition must take precedence over lagging stats: %v", l)
+	}
+	delete(f, rblnQueue)
 	if l := read(); l.Queue != 0 {
-		t.Fatalf("native observation must take precedence: %v", l)
+		t.Fatal("missing native fallback", l)
 	}
 	delete(f, queueMetric)
-	delete(f, rblnQueue)
 	if l := read(); l.Queue != -1 {
 		t.Fatal("missing queue retained value from earlier scrape")
 	}

@@ -1,3 +1,16 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Manage one model served through the official llm-d v1 deployment."""
 
 from __future__ import annotations
@@ -187,6 +200,9 @@ def start(cfg, work, timeout):
                 processes,
                 end - time.monotonic(),
             )
+            if any(e["kind"] == "npu" for e in eps):
+                snapshot = subprocess.check_output(["rbln-smi", "--json"], timeout=30)
+                runtime.save(work / "rbln-smi-ready.json", json.loads(snapshot))
             for ep in eps:
                 data, _ = runtime.fetch(ep["url"] + "/v1/models")
                 if state["model"]["name"] not in {
