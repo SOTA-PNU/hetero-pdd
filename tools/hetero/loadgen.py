@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import sys
 import time
@@ -129,6 +130,7 @@ def issue_request(
                 key.lower(): value
                 for key, value in response.headers.items()
                 if key.lower() in {"content-type", "x-request-id", "x-decode-target"}
+                or key.lower().startswith(("x-hetero-", "x-kv-remote-"))
             }
             for raw_line in response:
                 now = time.monotonic()
@@ -192,7 +194,8 @@ def issue_request(
         "chunk_timestamps": chunks,
         "assigned_slot": slot.index,
         "assigned_target": slot.target,
-        "execution_path": "PDD" if slot.target == "pdd" else "direct",
+        "execution_path": response_headers.get("x-hetero-path")
+        or ("PDD" if slot.target == "pdd" else "direct"),
         "requested_input_tokens": len(prompt_ids),
         "actual_input_tokens": actual_prompt_tokens,
         "requested_output_tokens": output_tokens,
@@ -244,6 +247,11 @@ def main(argv=None, *, tokenizer=None) -> None:
     parser.add_argument("--output-tokens", type=int, required=True)
     parser.add_argument("--requests", type=int, required=True)
     parser.add_argument("--warmup-per-endpoint", type=int, default=1)
+    parser.add_argument(
+        "--warmup-waves",
+        type=int,
+        help="Run this many full-length warmup waves at measurement concurrency",
+    )
     parser.add_argument("--seed", type=int, default=20260924)
     parser.add_argument("--workload", required=True)
     parser.add_argument(
@@ -274,25 +282,51 @@ def main(argv=None, *, tokenizer=None) -> None:
     if args.endpoint and len(slots) >= 2:
         unique_endpoints = slots[:2]
     warmup_rows = []
-    for repeat in range(args.warmup_per_endpoint):
-        for slot in unique_endpoints:
-            prompt = make_prompt(
-                tokenizer, min(args.input_tokens, 256), -repeat - 1, args.seed
-            )
-            now = time.monotonic()
-            warmup_rows.append(
-                issue_request(
-                    slot=slot,
-                    request_index=-(len(warmup_rows) + 1),
-                    prompt_ids=prompt,
-                    scheduled_arrival=now,
-                    model=args.model,
-                    output_tokens=min(args.output_tokens, 16),
-                    seed=args.seed,
-                    timeout=args.timeout,
-                    workload=args.workload + "-warmup",
+    if args.warmup_waves is not None:
+        if args.warmup_waves < 0:
+            raise ValueError("warmup waves must be nonnegative")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(slots)) as executor:
+            for wave in range(args.warmup_waves):
+                futures = []
+                for slot in slots:
+                    index = -(wave * len(slots) + slot.index + 1)
+                    futures.append(
+                        executor.submit(
+                            issue_request,
+                            slot=slot,
+                            request_index=index,
+                            prompt_ids=make_prompt(
+                                tokenizer, args.input_tokens, index, args.seed
+                            ),
+                            scheduled_arrival=time.monotonic(),
+                            model=args.model,
+                            output_tokens=args.output_tokens,
+                            seed=args.seed,
+                            timeout=args.timeout,
+                            workload=args.workload + "-warmup",
+                        )
+                    )
+                warmup_rows.extend(f.result() for f in futures)
+    else:
+        for repeat in range(args.warmup_per_endpoint):
+            for slot in unique_endpoints:
+                prompt = make_prompt(
+                    tokenizer, min(args.input_tokens, 256), -repeat - 1, args.seed
                 )
-            )
+                now = time.monotonic()
+                warmup_rows.append(
+                    issue_request(
+                        slot=slot,
+                        request_index=-(len(warmup_rows) + 1),
+                        prompt_ids=prompt,
+                        scheduled_arrival=now,
+                        model=args.model,
+                        output_tokens=min(args.output_tokens, 16),
+                        seed=args.seed,
+                        timeout=args.timeout,
+                        workload=args.workload + "-warmup",
+                    )
+                )
     with (args.run_dir / "warmup_requests.jsonl").open("w", encoding="utf-8") as handle:
         for row in warmup_rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
@@ -358,7 +392,13 @@ def main(argv=None, *, tokenizer=None) -> None:
                 "output_tokens": args.output_tokens,
                 "requests": args.requests,
                 "seed": args.seed,
-                "warmup_per_endpoint": args.warmup_per_endpoint,
+                "warmup_per_endpoint": None
+                if args.warmup_waves is not None
+                else args.warmup_per_endpoint,
+                "warmup_waves": args.warmup_waves,
+                "prompts_sha256": hashlib.sha256(
+                    json.dumps(prompts).encode()
+                ).hexdigest(),
                 "slots": [slot.__dict__ for slot in slots],
                 "prefix_reuse": "low_unique_prompts",
                 "generation": {"temperature": 0, "top_p": 1, "ignore_eos": True},

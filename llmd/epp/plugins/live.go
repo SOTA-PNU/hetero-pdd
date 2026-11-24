@@ -78,26 +78,23 @@ func sum(a, b float64) float64 { return a + b }
 func (*extractor) Extract(_ context.Context, in dl.PollInput[src.PrometheusMetricMap]) error {
 	f := in.Payload
 	state := liveState{At: time.Now(), Queue: gauge(f[queueMetric], sum), Running: gauge(f[runningMetric], sum), KV: gauge(f[kvMetric], math.Max), HostSlots: gauge(f[slotsMetric], math.Min), HostBytes: gauge(f[bytesMetric], math.Min)}
-	// A fresh RBLN worker exports these observed gauges even before vLLM's
-	// multiprocess "mostrecent" series has its first sample.
-	if state.Queue < 0 {
-		state.Queue = gauge(f[rblnQueue], sum)
-		if state.Queue >= 0 {
-			// Supply the official queue-scorer with the same measured depth.
-			m := in.Endpoint.GetMetrics().Clone()
-			if m == nil {
-				m = dl.NewMetrics()
-			}
-			m.WaitingQueueSize = int(state.Queue)
-			m.UpdateTime = state.At
-			in.Endpoint.UpdateMetrics(m)
+	// RBLN's scheduler publishes these gauges on each state transition.
+	// Native multiprocess vLLM statistics may retain an older interval.
+	if queue := gauge(f[rblnQueue], sum); queue >= 0 {
+		state.Queue = queue
+		m := in.Endpoint.GetMetrics().Clone()
+		if m == nil {
+			m = dl.NewMetrics()
 		}
+		m.WaitingQueueSize = int(queue)
+		m.UpdateTime = state.At
+		in.Endpoint.UpdateMetrics(m)
 	}
-	if state.Running < 0 {
-		state.Running = gauge(f[rblnRunning], sum)
+	if running := gauge(f[rblnRunning], sum); running >= 0 {
+		state.Running = running
 	}
-	if state.KV < 0 {
-		state.KV = gauge(f[rblnKV], math.Max)
+	if kv := gauge(f[rblnKV], math.Max); kv >= 0 {
+		state.KV = kv
 	}
 	in.Endpoint.GetAttributes().Put(liveKey, state)
 	return nil

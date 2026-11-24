@@ -1,3 +1,16 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Run the native policy profiles through the actual Envoy, EPP and PD sidecar binaries.
 
 The instrumented backends below serve synthetic OpenAI, Prometheus and KV fixtures.
@@ -150,6 +163,24 @@ def exercise(policy, work, bin_dir, *, flip=False):
             }
         )
     native = yaml.safe_load((PROFILES / f"{policy}.yaml").read_text())
+    if policy in {"selective", "tiktok"}:
+        # These mock backends use the fixture timings and a two-token KV block.
+        pricing = next(
+            p for p in native["plugins"] if p["type"] == "cost-route-handler"
+        )
+        common = dict(
+            remainingDecodeTokens=64,
+            kvBytesPerToken=131072,
+            transferMsPerToken=0.05,
+            transferFixedMs=7,
+        )
+        pricing["parameters"] = dict(
+            preload=policy == "tiktok",
+            costs={
+                "cuda": dict(common, prefillMsPerToken=0.4, decodeMsPerToken=2),
+                "rbln": dict(common, prefillMsPerToken=1, decodeMsPerToken=0.5),
+            },
+        )
     if policy == "trace-allocation":
         replay = next(
             x["parameters"]

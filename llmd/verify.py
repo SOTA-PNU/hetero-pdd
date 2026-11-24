@@ -1,3 +1,16 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Send deterministic, model-tokenized completions through the common ingress."""
 
 from __future__ import annotations
@@ -12,6 +25,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from tools.hetero.loadgen import make_prompt
+from tools.hetero.profiler.route_evidence import (
+    confirmed_transfer,
+    read_worker,
+    worker_request,
+)
 
 from .engines import MODEL_IDENTITY
 from .runtime import confirm_listeners, fetch, save
@@ -75,57 +93,33 @@ def reference_output(reference, model, run_id, prompts, conditions):
 
 
 def worker_import(endpoint, row):
-    # Collect evidence emitted by this consumer's connector, correlated with the
-    # actual upstream vLLM producer handle and the request seen by the gateway.
-    rows = []
-    for path in Path(endpoint["events_dir"]).glob("events_*.jsonl"):
-        for line in path.read_text().splitlines():
-            try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
-                continue  # a concurrent writer may have an incomplete final line
-            if row["request_id"] in ev.get("req_id", ""):
-                rows.append(ev)
-    start = next(
-        (
-            v
-            for v in rows
-            if v["kind"] == "kv_xfer_start"
-            and v.get("remote_engine_id") == row["remote_engine_id"]
-            and v.get("remote_request_id") == row["remote_request_id"]
-            and v.get("engine_id") == endpoint["engine_id"]
-        ),
-        None,
+    native, events = worker_request(
+        read_worker(Path(endpoint["events_dir"])), row["request_id"]
     )
-    imported = next(
-        (v for v in rows if v["kind"] == "kv_h2d" and v.get("num_blocks", 0) > 0), None
+    proof = confirmed_transfer(
+        events,
+        native,
+        endpoint,
+        row["remote_engine_id"],
+        row["request_id"],
+        len(row["prompt_ids"]),
+        {
+            "x-kv-remote-request-id": row["remote_request_id"],
+            "x-kv-remote-blocks": row["blocks"],
+        },
     )
-    if (
-        not start
-        or not imported
-        or start["req_id"] != imported["req_id"]
-        or start["monotonic_ns"] > imported["monotonic_ns"]
-    ):
-        return None
-    coverage = math.ceil(len(row["prompt_ids"]) / endpoint["engine"]["block_size"])
-    if (
-        row["blocks"] != coverage
-        or imported["num_blocks"] != coverage
-        or imported.get("bytes_est", 0) <= 0
-        or any(
-            sum(map(len, start[k])) != coverage
-            for k in ("remote_block_ids", "local_block_ids")
+    if proof:
+        return dict(
+            consumer_request=native,
+            remote_blocks=proof["remote_block_ids"],
+            local_blocks=proof["local_block_ids"],
+            imported_blocks=proof["blocks"],
+            bytes_est=proof["bytes"],
+            h2d_ns=proof["h2d_ns"],
+            first_decode_ns=proof["first_decode_ns"],
+            receive_ms=proof["receive_ms"],
+            import_ms=proof["import_ms"],
         )
-    ):
-        return None
-    return dict(
-        consumer_request=start["req_id"],
-        remote_blocks=start["remote_block_ids"],
-        local_blocks=start["local_block_ids"],
-        imported_blocks=imported["num_blocks"],
-        bytes_est=imported["bytes_est"],
-        h2d_ns=imported["h2d_ns"],
-    )
 
 
 def verify(work, state, reference, *, collect=None):

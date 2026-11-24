@@ -41,6 +41,7 @@ class _EventLog:
         self.rank = rank or "0"
         self.disabled = False
         self.count = 0
+        self.last_decode: set[str] = set()
         self.last_flush_ns = 0
         try:
             os.makedirs(directory, exist_ok=True)
@@ -79,9 +80,15 @@ class _EventLog:
             )
             self.count += 1
             now = time.monotonic_ns()
+            first_decode = False
+            if kind == "model_call" and fields.get("phase") == "decode":
+                ids = set(fields["request_ids"])
+                first_decode = not ids.issubset(self.last_decode)
+                self.last_decode = ids
             if (
                 self.count >= 256
-                or kind in ("kv_layout", "clock_anchor")
+                or first_decode
+                or kind in ("kv_layout", "clock_anchor", "kv_h2d")
                 or now - self.last_flush_ns >= 1_000_000_000
             ):
                 self.file.flush()
@@ -360,7 +367,7 @@ class _PerformanceContext:
             return
         if self._pending is None:
             return  # sampler with no preceding model step; ignore
-        self._record(self._pending.merged(sample))
+        self._record(self._pending.merged(sample), sampled=True)
         if self._e2e_start is not None:
             self._e2e[bool(self._pending.phase)].record(end - self._e2e_start)
         self._pending = None
@@ -372,7 +379,7 @@ class _PerformanceContext:
             self._pending = None
         self._e2e_start = None
 
-    def _record(self, s: _Sample) -> None:
+    def _record(self, s: _Sample, *, sampled: bool = False) -> None:
         self._metrics[bool(s.phase)].record(
             s.latency, s.host, s.device, s.ccl, s.prepare
         )
@@ -384,6 +391,7 @@ class _PerformanceContext:
                 )
             record_event(
                 "step",
+                sampled=sampled,
                 monotonic_ns=s.end_mono_ns,
                 phase="prefill" if s.phase else "decode",
                 exec_s=s.latency,

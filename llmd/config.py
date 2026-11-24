@@ -1,3 +1,16 @@
+# Copyright 2026 Rebellions Inc. All rights reserved.
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Compile an experiment and backend capabilities into endpoint labels and KV pairs."""
 
 from __future__ import annotations
@@ -181,6 +194,7 @@ def load(path):
             "engine",
             "endpoints",
             "verify",
+            "benchmark",
             "instrumentation",
             "cache_root",
             "hub_cache",
@@ -193,11 +207,6 @@ def load(path):
     model = cfg["model"] = model_definition(cfg["model"], path.parent)
     cfg["profile"] = str((path.parent / cfg["profile"]).resolve())
     native = read_yaml(cfg["profile"])
-    if (
-        native.get("apiVersion") != "llm-d.ai/v1"
-        or native.get("kind") != "EndpointPickerConfig"
-    ):
-        raise ValueError("profile requires a native llm-d.ai/v1 EndpointPickerConfig")
     cfg["native"] = native
     cfg.setdefault("host", "127.0.0.1")
     cfg["host"] = str(ipaddress.IPv4Address(cfg["host"]))
@@ -235,6 +244,39 @@ def load(path):
         raise ValueError("verify.paths requires full and/or pdd")
     if verify["concurrency"] > verify["requests"]:
         raise ValueError("verify.concurrency exceeds requests")
+    if "benchmark" in cfg:
+        bench = cfg["benchmark"]
+        fields(
+            bench,
+            keys | {"seed", "warmup", "repeats", "comparisons", "require"},
+            keys,
+            "benchmark",
+        )
+        for key in keys:
+            integer(bench[key], f"benchmark.{key}")
+        if bench["output_tokens"] < 2 or bench["concurrency"] > bench["requests"]:
+            raise ValueError(
+                "benchmark needs output_tokens >= 2 and requests >= concurrency"
+            )
+        integer(bench.setdefault("warmup", 2), "benchmark.warmup", low=0)
+        integer(bench.setdefault("repeats", 1), "benchmark.repeats")
+        integer(
+            bench.setdefault("seed", 20260924), "benchmark.seed", low=0, high=2**63 - 1
+        )
+        if "require" in bench and bench["require"] not in ("pdd", "overlap"):
+            raise ValueError("benchmark.require must be pdd or overlap")
+        comparisons = bench.setdefault("comparisons", {})
+        if not isinstance(comparisons, dict):
+            raise ValueError("benchmark.comparisons needs a label-to-profile mapping")
+        for name, filename in comparisons.items():
+            if not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", name) or name in {
+                "candidate",
+                "reference",
+            }:
+                raise ValueError(f"invalid benchmark comparison name {name!r}")
+            if not isinstance(filename, str) or not filename:
+                raise ValueError(f"{name}: expected comparison profile filename")
+            comparisons[name] = str((path.parent / filename).resolve())
     instrumentation = cfg.setdefault("instrumentation", {})
     fields(instrumentation, {"rbln_events", "otlp_endpoint"}, set(), "instrumentation")
     if type(instrumentation.get("rbln_events", False)) is not bool:
@@ -331,6 +373,11 @@ def load(path):
             )
         if verify["input_tokens"] + verify["output_tokens"] > params["max_model_len"]:
             raise ValueError(f"{name}: verification exceeds engine context")
+        if (
+            "benchmark" in cfg
+            and bench["input_tokens"] + bench["output_tokens"] > params["max_model_len"]
+        ):
+            raise ValueError(f"{name}: benchmark exceeds engine context")
         if params["layout"] not in ("HND", "NHD"):
             raise ValueError(f"{name}: vLLM cache layout must be HND or NHD")
         if ep["backend"] == "rbln" and (params["pp"] != 1 or params["dp"] != 1):
@@ -448,6 +495,13 @@ def load(path):
                 }.items()
             }
         )
+        if "lookahead" in params:
+            labels["pdd.sota.dev/lookahead-depth"] = str(
+                params["lookahead"]["lookahead_depth"]
+            )
+            labels["pdd.sota.dev/lookahead-bytes"] = str(
+                params["lookahead"]["prefetch_byte_budget"]
+            )
         ep["tp"] = params["tp"]
     producers = [e for e in endpoints if "prefill" in e["roles"]]
     consumers = [e for e in endpoints if "decode" in e["roles"]]
@@ -467,6 +521,19 @@ def load(path):
             )
     if producers and not consumers:
         raise ValueError("producer pool has no decode candidates")
+    validate_profile(native, endpoints)
+    for filename in cfg.get("benchmark", {}).get("comparisons", {}).values():
+        validate_profile(read_yaml(filename), endpoints)
+    cfg["rejected_pairs"] = rejected
+    return cfg
+
+
+def validate_profile(native, endpoints):
+    if (
+        native.get("apiVersion") != "llm-d.ai/v1"
+        or native.get("kind") != "EndpointPickerConfig"
+    ):
+        raise ValueError("profile requires a native llm-d.ai/v1 EndpointPickerConfig")
     for prof in native.get("schedulingProfiles", []):
         refs = {p["pluginRef"] for p in prof.get("plugins", [])}
         for plugin in native.get("plugins", []):
@@ -480,5 +547,3 @@ def load(path):
                     for e in endpoints
                 ):
                     raise ValueError(f"{prof['name']}: no candidates for {match}")
-    cfg["rejected_pairs"] = rejected
-    return cfg
