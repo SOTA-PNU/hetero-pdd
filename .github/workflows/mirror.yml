@@ -1,0 +1,55 @@
+name: Mirror to pnu-yk
+
+"on":
+  push:
+    branches: ['**']
+    tags: ['**']
+  create:
+  delete:
+  schedule:
+    # Reconcile refs on older branches that do not contain this workflow.
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-to-pnu-yk
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    # The workflow is copied to the destination along with the repository.
+    if: github.repository == 'SOTA-PNU/hetero-pdd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Mirror all branches and tags
+        env:
+          MIRROR_SSH_PRIVATE_KEY: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$MIRROR_SSH_PRIVATE_KEY" ]]; then
+            echo '::error::Configure the MIRROR_SSH_PRIVATE_KEY Actions secret first.'
+            exit 1
+          fi
+
+          mirror_tmp=$(mktemp -d "$RUNNER_TEMP/hetero-pdd-mirror.XXXXXX")
+          trap 'rm -rf -- "$mirror_tmp"' EXIT
+          umask 077
+          printf '%s\n' "$MIRROR_SSH_PRIVATE_KEY" > "$mirror_tmp/key"
+          unset MIRROR_SSH_PRIVATE_KEY
+          # Published at https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$mirror_tmp/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i '$mirror_tmp/key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$mirror_tmp/known_hosts'"
+          export GIT_TERMINAL_PROMPT=0
+
+          # Always read the latest source refs, even for a delayed workflow run.
+          # Only Git data is read: no code from the source tree is executed.
+          git clone --bare https://github.com/SOTA-PNU/hetero-pdd.git "$mirror_tmp/repository.git"
+          git -C "$mirror_tmp/repository.git" push --atomic --prune \
+            git@github.com:pnu-yk/hetero-pdd.git \
+            '+refs/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
