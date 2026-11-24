@@ -202,4 +202,6 @@ jobs:
         if: ${{ always() }}
         run: |
           cd "$(dirname -- "$RESULT_DIR")"
+          # Directory names are generated above (native-dtype-gh<run>-<attempt>), so ls is safe.
+          # shellcheck disable=SC2012
           ls -dt native-dtype-gh* | tail -n +6 | xargs -r rm -rf --

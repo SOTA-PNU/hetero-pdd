@@ -2,7 +2,9 @@ name: Profiler Test
 "on":
   workflow_dispatch:
   push:
-    paths: ['tools/hetero/**', 'tests/hetero/**']
+    paths: 
+      - 'tools/hetero/**'
+      - 'tests/hetero/**'
 permissions:
   contents: read
 jobs:

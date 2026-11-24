@@ -41,4 +41,4 @@ mock CLI, proxy health/auth/chat-only options, and fake-process lifecycle method
 Responses retain the fields consumed by loadgen (`choices`, text, token IDs,
 finish reason, usage and `[DONE]`); unused OpenAI envelope metadata was removed.
 Histograms retain sum/count and the required `+Inf` bucket; arbitrary finite buckets
-were removed. Counter-reset analysis belongs to WP7b's synthetic metrics text.
+were removed.  Counter-reset analysis belongs to WP7b's synthetic metrics text.
