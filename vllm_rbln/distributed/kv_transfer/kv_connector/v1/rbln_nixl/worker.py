@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from typing import TYPE_CHECKING, Any
 
 import msgspec
@@ -34,6 +36,7 @@ from vllm.distributed.kv_transfer.kv_connector.v1.nixl import (
     NixlConnectorWorker,
 )
 from vllm.distributed.kv_transfer.kv_connector.v1.nixl.metadata import (
+    NixlConnectorMetadata,
     NixlHandshakePayload,
     ReqMeta,
     compute_nixl_compatibility_hash,
@@ -110,6 +113,27 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
         # buffer; restore it — NIXL cannot register RBLN device memory.
         self.use_host_buffer = self.kv_buffer_device == "cpu"
 
+        lookahead = vllm_config.kv_transfer_config.get_from_extra_config(
+            "rbln_lookahead", None
+        )
+        self._host_stage_enabled = lookahead is not None
+        if self._host_stage_enabled:
+            if not self.use_host_buffer:
+                raise ValueError("rbln_lookahead requires CPU staging buffers")
+            self._receive_timeout_s = lookahead.get("receive_timeout_s", 30)
+            self._hold_deadlines: dict[str, float] = {}
+            self._host_ready: set[str] = set()
+            self._failed_stages: set[str] = set()
+            self._import_allowed: set[str] = set()
+            self._discard: set[str] = set()
+            self._stop_polls = Event()
+            self._poll_executor = ThreadPoolExecutor(
+                max_workers=lookahead["active_decode_limit"]
+                + lookahead["lookahead_depth"],
+                thread_name_prefix="nixl-host-recv",
+            )
+            self._polls = {}
+
         self._pending_kv_caches: dict[str, torch.Tensor] | None = None
 
         # Pin to logical values. Upstream would otherwise multiply by the
@@ -158,23 +182,140 @@ class RblnNixlConnectorWorker(NixlConnectorWorker):
                     self._sw_ratio,
                 )
 
-    # Match PerformanceContext's import-time gate: disabled workers inherit the
-    # upstream methods directly, without an extra per-request wrapper or timer.
-    if metrics_v2.EVENTS_ENABLED:
+    def start_load_kv(self, metadata: NixlConnectorMetadata):
+        if self._host_stage_enabled:
+            now = time.monotonic()
+            for rid in getattr(metadata, "hetero_hold", ()):
+                self._hold_deadlines[rid] = now + self._receive_timeout_s
+            self._import_allowed = set(getattr(metadata, "hetero_import", ()))
+            self._discard = set(getattr(metadata, "hetero_discard", ()))
+        return super().start_load_kv(metadata)
 
-        def _read_blocks_for_req(self, req_id: str, meta: ReqMeta):
-            if metrics_v2.EVENTS_ENABLED:
-                try:
-                    metrics_v2.record_event("kv_xfer_start", req_id=req_id)
-                except Exception as exc:
-                    metrics_v2.disable_events(exc)
-            return super()._read_blocks_for_req(req_id, meta)
+    def _handle_failed_transfer(self, req_id, handle):
+        if self._host_stage_enabled and req_id in self._hold_deadlines:
+            self._failed_stages.add(req_id)
+        return super()._handle_failed_transfer(req_id, handle)
+
+    def _pop_done_transfers(self, transfers):
+        # Pinned vLLM 0.22.0 polls native NIXL handles here *before* copying
+        # or dropping RecvMeta. Returning only importable IDs reuses its H2D,
+        # invalidation, producer notifications and scheduler completion paths.
+        if not self._host_stage_enabled:
+            return super()._pop_done_transfers(transfers)
+        for rid, (handles, future) in list(self._polls.items()):
+            if not future.done():
+                continue
+            del self._polls[rid]
+            state, last_progress, observed = future.result()
+            if state in ("timeout", "error"):
+                # NIXL release cancels an active operation or raises. If DMA
+                # cannot quiesce, fail the worker before reusing these blocks.
+                transfers[rid] = handles
+                while handles:
+                    self.nixl_wrapper.release_xfer_handle(handles[-1])
+                    handles.pop()
+                del transfers[rid]
+                self._handle_failed_transfer(rid, None)
+                metrics_v2.record_event("kv_receive_failed", req_id=rid, reason=state)
+            else:
+                transfers[rid] = handles
+                if state == "DONE":
+                    metrics_v2.record_event(
+                        "kv_xfer_done", req_id=rid, monotonic_ns=observed
+                    )
+                    metrics_v2.record_event(
+                        "kv_host_ready",
+                        req_id=rid,
+                        monotonic_ns=observed,
+                        last_proc_ns=last_progress,
+                    )
+        completed = super()._pop_done_transfers(transfers)
+        newly_ready = (completed & self._hold_deadlines.keys()) - self._failed_stages
+        self._host_ready.update(newly_ready)
+        # A canceled request retains both reserved copies until its last DMA
+        # is quiescent. Use the native skip-import branch without poisoning
+        # unrelated device blocks. Its scheduler status is already terminal.
+        discarded = self._host_ready & self._discard
+        for rid in discarded:
+            self._failed_recv_reqs.put(rid)
+            metrics_v2.record_event("kv_host_discard", req_id=rid)
+        return (
+            (completed - newly_ready)
+            | (self._host_ready & self._import_allowed)
+            | discarded
+        )
+
+    def get_finished(self):
+        sending, receiving = super().get_finished()
+        if self._host_stage_enabled:
+            for rid in receiving:
+                self._hold_deadlines.pop(rid, None)
+            self._host_ready.difference_update(receiving)
+            self._failed_stages.difference_update(receiving)
+        return sending, receiving
+
+    def _observe_host_read(self, handles, deadline):
+        """Poll an actual posted READ independently of the NPU model thread."""
+        last_progress = None
+        while not self._stop_polls.is_set():
+            try:
+                states = [self.nixl_wrapper.check_xfer_state(h) for h in handles]
+            except Exception:
+                # Return ownership to upstream's ordinary failure handling.
+                return "error", last_progress, time.monotonic_ns()
+            now = time.monotonic_ns()
+            if all(state == "DONE" for state in states):
+                return "DONE", last_progress, now
+            if any(state not in ("PROC", "DONE") for state in states):
+                return "error", last_progress, now
+            last_progress = now
+            if time.monotonic() >= deadline:
+                return "timeout", last_progress, now
+            self._stop_polls.wait(0.0002)
+        return "shutdown", last_progress, time.monotonic_ns()
+
+    def _read_blocks_for_req(self, req_id: str, meta: ReqMeta):
+        if metrics_v2.EVENTS_ENABLED:
+            metrics_v2.record_event(
+                "kv_xfer_start",
+                req_id=req_id,
+                remote_engine_id=meta.remote.engine_id,
+                remote_request_id=meta.remote.request_id,
+                remote_block_ids=meta.remote.block_ids,
+                local_block_ids=meta.local_block_ids,
+                engine_id=self.engine_id,
+            )
+        result = super()._read_blocks_for_req(req_id, meta)
+        if self._host_stage_enabled and req_id in self._hold_deadlines:
+            # Exactly one poller owns a handle until terminal or shutdown.
+            handles = self._recving_transfers.pop(req_id, None)
+            if handles:
+                future = self._poll_executor.submit(
+                    self._observe_host_read, handles, self._hold_deadlines[req_id]
+                )
+                self._polls[req_id] = (handles, future)
+        return result
+
+    def shutdown(self):
+        if hasattr(self, "_poll_executor"):
+            self._stop_polls.set()
+            self._poll_executor.shutdown(wait=True, cancel_futures=True)
+            for rid, (handles, _) in self._polls.items():
+                self._recving_transfers[rid] = handles
+            self._polls.clear()
+        return super().shutdown()
+
+    if metrics_v2.EVENTS_ENABLED:
 
         def sync_recved_kv_to_device(self, req_id: str, meta: ReqMeta):
             start_ns = None
             if metrics_v2.EVENTS_ENABLED:
                 try:
-                    metrics_v2.record_event("kv_xfer_done", req_id=req_id)
+                    if (
+                        not self._host_stage_enabled
+                        or req_id not in self._hold_deadlines
+                    ):
+                        metrics_v2.record_event("kv_xfer_done", req_id=req_id)
                     metrics_v2.reset_copy_stats()
                     start_ns = time.monotonic_ns()
                 except Exception as exc:

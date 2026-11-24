@@ -52,6 +52,10 @@ class EngineEventTests(unittest.TestCase):
                 self.assertEqual(flush.call_count, 2)
                 m.record_event("clock_anchor")
                 self.assertEqual(flush.call_count, 3)
+                m.record_event("kv_h2d", req_id="short")
+                m.record_event("model_call", phase="decode", request_ids=["short"])
+                m.record_event("model_call", phase="decode", request_ids=["short"])
+                self.assertEqual(flush.call_count, 5)
             sample = m._Sample(1.0, start_mono_ns=10, end_mono_ns=20)
             merged = sample.merged(m._Sample(2.0, start_mono_ns=30, end_mono_ns=40))
             self.assertEqual(

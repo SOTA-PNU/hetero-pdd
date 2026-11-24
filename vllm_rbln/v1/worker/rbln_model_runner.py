@@ -1449,10 +1449,20 @@ class RBLNModelRunner(KVConnectorModelRunnerMixin):
                 else self.performance_ctx.profile_model(self.is_prefill)
             ),
         ):
+            if metrics_v2.EVENTS_ENABLED:
+                model_start_ns = time.monotonic_ns()
             model_output = self.model_executable(
                 **staged_model_inputs.as_kwargs(),
                 **model_kwargs,
             )
+            if metrics_v2.EVENTS_ENABLED:
+                metrics_v2.record_event(
+                    "model_call",
+                    phase="prefill" if self.is_prefill else "decode",
+                    request_ids=list(req_ids),
+                    span_start_ns=model_start_ns,
+                    span_end_ns=time.monotonic_ns(),
+                )
 
         with record_function_or_nullcontext("rbln_model_runner: postprocess"):
             hidden_states, aux_hidden_states, logits = model_output

@@ -1,0 +1,9 @@
+apiVersion: hetero-pdd/v2
+model: models/qwen2.5-0.5b.yaml
+profile: ../llmd/epp/profiles/fixed-pdd.yaml
+endpoints:
+  - {id: gpu0, backend: cuda, roles: [prefill, full], devices: [0], port: 18001, kv_port: 18101}
+  - {id: npu0, backend: rbln, roles: [decode, full], devices: [0], port: 18002, kv_port: 18102, sidecar_port: 18202, sidecar_metrics_port: 18302}
+instrumentation: {rbln_events: true}
+verify: {paths: [pdd], input_tokens: 128, output_tokens: 8, concurrency: 1, requests: 2}
+#

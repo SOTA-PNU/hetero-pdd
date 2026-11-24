@@ -115,6 +115,14 @@ class RblnNixlConnectorScheduler(NixlConnectorScheduler):
         meta.reqs_in_batch = self._reqs_in_batch  # type: ignore[var-annotated, has-type]
         meta.reqs_not_processed = self._reqs_not_processed  # type: ignore[var-annotated, has-type]
 
+        # Preserve upstream NIXL lease heartbeats. This common fix applies
+        # both with and without experimental lookahead; no timeout is changed.
+        if self._heartbeat_by_engine:
+            now = time.perf_counter()
+            if now - self._last_heartbeat_time >= self._heartbeat_interval:
+                self._last_heartbeat_time = now
+                meta.heartbeat_by_engine = self._heartbeat_by_engine
+
         # Clear the list once workers start the transfers
         self._reqs_need_recv.clear()
         self._reqs_in_batch = set()  # type: ignore[var-annotated]
@@ -144,6 +152,10 @@ class RblnNixlConnectorScheduler(NixlConnectorScheduler):
         )
         if not params:
             return False, None
+
+        # Match upstream cleanup for aborted/terminal requests which never
+        # reached finished_recving. Normal receive cleanup is inherited.
+        self._stop_heartbeat(request.request_id)
 
         if params.get("do_remote_prefill"):
             # If do_remote_prefill is still True when the request is finished,
