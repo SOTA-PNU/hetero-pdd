@@ -11,7 +11,7 @@ class WorkflowTests(unittest.TestCase):
             import yaml
         except ImportError:
             self.skipTest("PyYAML not installed")
-        for name in ("hetero_unit_tests", "experiment_test", "pdd_test"):
+        for name in ("profiler_test", "experiment_test", "pdd_test"):
             data = yaml.load(
                 (REPO / f".github/workflows/{name}.yml").read_text(),
                 Loader=yaml.BaseLoader,
