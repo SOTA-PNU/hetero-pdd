@@ -11,7 +11,7 @@ class WorkflowTests(unittest.TestCase):
             import yaml
         except ImportError:
             self.skipTest("PyYAML not installed")
-        for name in ("hetero_unit_tests",):
+        for name in ("profiler_test",):
             data = yaml.safe_load((REPO / f".github/workflows/{name}.yml").read_text())
             self.assertIn("workflow_dispatch", data["on"])
             self.assertTrue(data["jobs"])

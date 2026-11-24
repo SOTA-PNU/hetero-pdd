@@ -1,4 +1,4 @@
-name: Hetero unit tests
+name: Profiler Test
 "on":
   workflow_dispatch:
   push:
