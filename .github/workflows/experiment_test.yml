@@ -16,12 +16,6 @@ on:
         description: Algorithm YAML filename in experiments/ (e.g. fixed-pdd.yaml)
         required: true
         type: string
-      stage:
-        description: Configured comparison, fixed PDD verification, or PDD-only TikTok overlap
-        required: false
-        type: choice
-        default: configured
-        options: [configured, pdd, overlap]
 
 concurrency:
   group: pdd-test
@@ -37,7 +31,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 
           persist-credentials: false
 
       - name: Select experiments
@@ -99,7 +93,7 @@ jobs:
         experiment: ${{ fromJSON(needs.prepare.outputs.files) }}
     runs-on: self-hosted
     env:
-      STAGE: ${{ inputs.stage || (matrix.experiment == 'experiments/tiktok-2npu.yaml' && 'smoke') || 'configured' }}
+      STAGE: ${{ (matrix.experiment == 'experiments/tiktok-2npu.yaml' && 'smoke') || 'configured' }}
       EXPERIMENT: ${{ matrix.experiment }}
       EXPERIMENT_CONTAINER: experiment-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
     steps:
