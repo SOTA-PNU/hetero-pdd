@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/pdd-scheduling-llmd
     paths:
       - 'experiments/*.yaml'
       - 'experiments/*.yml'
